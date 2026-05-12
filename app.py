@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import swisseph as swe
 import math
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 # Vimshottari Dasha Lord Sequence & Years
 NL_SEQUENCE = ["KE", "VE", "SU", "MO", "MA", "RA", "JU", "SA", "ME"]
@@ -17,6 +17,24 @@ RASHI_LORDS = {
 LORD_TO_RASHIS = {}
 for rashi, lord in RASHI_LORDS.items():
     LORD_TO_RASHIS.setdefault(lord, []).append(rashi)
+
+def get_current_ist_rounded():
+    """Gets current IST time and rounds to the nearest 15 minutes."""
+    # 1. Get current UTC time and convert to IST (+5 hours 30 minutes)
+    utc_now = datetime.now(timezone.utc)
+    ist_now = utc_now + timedelta(hours=5, minutes=30)
+    
+    # 2. Round to the nearest 15 minutes
+    minute = 15 * round(ist_now.minute / 15)
+    
+    # 3. Handle the edge case where rounding pushes the minute to 60
+    if minute >= 60:
+        ist_now += timedelta(hours=1)
+        minute = 0
+        
+    rounded_time = ist_now.replace(minute=minute, second=0, microsecond=0)
+    
+    return rounded_time.date(), rounded_time.time()
 
 def get_nl_sl(longitude):
     long_min = longitude * 60.0
@@ -298,11 +316,14 @@ st.set_page_config(layout="wide", page_title="Astrolabe Explorer")
 st.title("Financial Astrolabe Explorer")
 st.markdown("Explore intraday astrological shifts dynamically. No database required.")
 
+# Fetch the live, rounded IST date and time
+default_date, default_time = get_current_ist_rounded()
+
 col1, col2 = st.columns(2)
 with col1:
-    selected_date = st.date_input("Select Date", date(2026, 4, 19))
+    selected_date = st.date_input("Select Date", default_date)
 with col2:
-    selected_time = st.time_input("Select Time", datetime.strptime("09:15", "%H:%M").time())
+    selected_time = st.time_input("Select Time", default_time)
 
 st.divider()
 
