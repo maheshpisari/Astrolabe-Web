@@ -197,7 +197,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         while any(ang_dist(shifted_deg, p_deg) < 4.0 and abs(radius - p_rad) < 0.6 for p_deg, p_rad in used_positions_inner):
             radius -= 0.65 
         used_positions_inner.append((shifted_deg, radius))
-        ax.text(theta, radius, planet, ha='center', va='center', fontsize=7, fontweight='bold', color='purple', bbox=dict(boxstyle="round,pad=0.03", fc="white", ec="none", alpha=0.9), zorder=6)
+        ax.text(theta, radius, planet, ha='center', va='center', fontsize=11, fontweight='bold', color='purple', bbox=dict(boxstyle="round,pad=0.03", fc="white", ec="none", alpha=0.9), zorder=6)
 
     ring1_plots = {p: [] for p in planet_positions.keys()}
     for planet, data in planet_positions.items():
