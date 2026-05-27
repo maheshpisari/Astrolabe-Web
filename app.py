@@ -303,10 +303,10 @@ def draw_circular_horoscope(year, month, day, hour, minute):
 
     for l_val, transition_text in moon_transitions:
         theta = np.radians((l_val + inner_offset) % 360)
-        ax.plot([theta, theta], [10, 14], color='darkblue', lw=2, linestyle='--', zorder=4)
+        ax.plot([theta, theta], [10, 14], color='black', lw=2, linestyle='--', zorder=4)
         rot_deg = (l_val + inner_offset) % 360
         if 90 < rot_deg <= 270: rot_deg += 180
-        ax.text(theta, 13.6, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=7, fontweight='bold', color='darkblue', bbox=dict(boxstyle="square,pad=0.1", fc="white", ec="darkblue", lw=1.0, alpha=0.9), zorder=5)
+        ax.text(theta, 13.6, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=7, fontweight='bold', color='black', bbox=dict(boxstyle="square,pad=0.1", fc="white", ec="black", lw=1.0, alpha=0.9), zorder=5)
 
     plt.tight_layout()
     return fig
