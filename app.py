@@ -9,7 +9,6 @@ from datetime import date, datetime, timedelta, timezone, time
 # --- 1. PASSWORD PROTECTION GATE ---
 def check_password():
     """Returns `True` if the user had the correct password."""
-    # If they already logged in during this session, let them through
     if st.session_state.get("password_correct", False):
         return True
 
@@ -106,6 +105,13 @@ def get_lagna(year, month, day, hour, minute):
     cusps, ascmc = swe.houses_ex(jd, 12.9716, 77.5946, b'P', swe.FLG_SIDEREAL)
     return int(math.floor(ascmc[0] + 0.5)) % 360
 
+def get_moon_nl_sl(year, month, day, hour, minute):
+    """Calculates Moon's exact Nakshatra and Sublord at a given minute"""
+    jd = get_jd(year, month, day, hour, minute)
+    swe.set_sid_mode(swe.SIDM_LAHIRI)
+    pos, _ = swe.calc_ut(jd, swe.MOON, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
+    return get_nl_sl(pos[0])
+
 def get_planetary_positions(year, month, day, hour, minute):
     jd = get_jd(year, month, day, hour, minute)
     swe.set_sid_mode(swe.SIDM_LAHIRI)
@@ -128,7 +134,6 @@ def get_planetary_positions(year, month, day, hour, minute):
     return positions
 
 def get_tithi_info(year, month, day, hour=9, minute=15):
-    """Calculates the Tithi and returns the market sentiment for the day."""
     jd = get_jd(year, month, day, hour, minute)
     swe.set_sid_mode(swe.SIDM_LAHIRI)
     sun_pos, _ = swe.calc_ut(jd, swe.SUN, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
@@ -137,7 +142,6 @@ def get_tithi_info(year, month, day, hour=9, minute=15):
     diff = (moon_pos[0] - sun_pos[0]) % 360
     tithi_num = math.floor(diff / 12) + 1
     
-    # 1-15 Shukla Paksha, 16-30 Krishna Paksha
     t_type = tithi_num % 5
     if t_type == 1:
         return f"Tithi {tithi_num} (Nanda) - 📈 Trending Day Likely. Ride the momentum."
@@ -147,7 +151,7 @@ def get_tithi_info(year, month, day, hour=9, minute=15):
         return f"Tithi {tithi_num} (Jaya) - 🚀 Victory/Bullish Bias. Look for breakout longs."
     elif t_type == 4:
         return f"Tithi {tithi_num} (Rikta) - ⚠️ 'Empty' Hands. High Risk of SL Hunting & Volatility."
-    else: # 0 (which is 5, 10, 15)
+    else: 
         return f"Tithi {tithi_num} (Purna) - 🔄 Reversal Day. Watch for major market turning points."
 
 def ang_dist(d1, d2):
@@ -163,18 +167,14 @@ def calculate_sector_scores(year, month, day, hour, minute):
     
     planet_true_scores = {}
     
-    # NEW LOGIC: Planet Zone Score + Nakshatra Lord Zone Score
     for p_name, data in planets.items():
-        # Planet's own zone
         shifted_deg = (data["deg"] + inner_offset) % 360
         planet_zone_score = ZONE_SCORES[int(shifted_deg // 30)]
         
-        # Nakshatra Lord's zone
         nl = data["nl"]
         nl_shifted_deg = (planets[nl]["deg"] + inner_offset) % 360
         nl_zone_score = ZONE_SCORES[int(nl_shifted_deg // 30)]
         
-        # True Strength = Combined Alignment
         planet_true_scores[p_name] = planet_zone_score + nl_zone_score
         
     sector_results = []
@@ -261,6 +261,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
     planet_positions = get_planetary_positions(year, month, day, hour, minute)
     inner_offset = 30 - current_lagna
 
+    # Calculate exactly where the time markers fall
     time_markers = []
     start_t = datetime(year, month, day, 9, 15)
     end_t = datetime(year, month, day, 15, 30)
@@ -270,12 +271,23 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         time_markers.append((curr_t.strftime("%H:%M"), l_val))
         curr_t += timedelta(minutes=15)
         
+    # --- RESTORED: Minute-by-Minute Moon Transition Tracker ---
     moon_transitions = []
     curr_m = start_t
-    prev_nl = planet_positions["MO"]["nl"]
+    prev_nl, prev_sl = get_moon_nl_sl(year, month, day, curr_m.hour, curr_m.minute)
     l_val_start = get_lagna(year, month, day, curr_m.hour, curr_m.minute)
-    moon_transitions.append((l_val_start, f"Moon->{prev_nl}"))
+    moon_transitions.append((l_val_start, f"{prev_nl}-{prev_sl}"))
     
+    curr_m += timedelta(minutes=1)
+    while curr_m <= end_t:
+        curr_nl, curr_sl = get_moon_nl_sl(year, month, day, curr_m.hour, curr_m.minute)
+        if curr_nl != prev_nl or curr_sl != prev_sl:
+            l_val = get_lagna(year, month, day, curr_m.hour, curr_m.minute)
+            moon_transitions.append((l_val, f"{curr_nl}-{curr_sl}"))
+            prev_nl, prev_sl = curr_nl, curr_sl
+        curr_m += timedelta(minutes=1)
+    # -----------------------------------------------------------
+
     fig = plt.figure(figsize=(16, 16), dpi=150) 
     fig.patch.set_facecolor('#0e1117') 
     ax = fig.add_subplot(111, projection='polar')
@@ -378,6 +390,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
             theta = np.radians(((r - 1) * 30 + 15 + inner_offset) % 360)
             ax.text(theta, 5.5, lord, ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#3B82F6", ec="none", alpha=0.95), zorder=7)
 
+    # Drawing static 15 min time markers
     for t_str, l_val in time_markers:
         theta = np.radians((l_val + inner_offset) % 360)
         ax.plot([theta, theta], [10, 14], color='gray', lw=1.5, linestyle=':', zorder=4)
@@ -388,6 +401,15 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         f_size = 9 if is_current else 6
         color = '#00CC96' if is_current else 'gray'
         ax.text(theta, 13.0, f"L-{t_str}", ha='center', va='center', rotation=rot_deg, fontsize=f_size, fontweight='bold', color=color, bbox=dict(boxstyle="round,pad=0.15", fc="#1f2937", ec="none", alpha=0.9), zorder=5)
+
+    # --- RESTORED: Drawing Moon Transition Text ---
+    for l_val, transition_text in moon_transitions:
+        theta = np.radians((l_val + inner_offset) % 360)
+        ax.plot([theta, theta], [10, 14], color='#F59E0B', lw=2, linestyle='--', zorder=4)
+        rot_deg = (l_val + inner_offset) % 360
+        if 90 < rot_deg <= 270: rot_deg += 180
+        ax.text(theta, 13.6, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=8, fontweight='bold', color='#111827', bbox=dict(boxstyle="square,pad=0.1", fc="#F59E0B", ec="none", alpha=0.9), zorder=5)
+    # ----------------------------------------------
 
     plt.tight_layout()
     return fig
@@ -405,11 +427,9 @@ if "time_slider" not in st.session_state:
 def reset_time_on_date_change():
     st.session_state.time_slider = time(9, 15)
 
-# --- 1. TITLE & BANNER PLACEHOLDER (Ensures banner stays at the top) ---
 st.title("Financial Astrolabe - Master Edition")
 tithi_banner_placeholder = st.empty()
 
-# --- 2. CONTROLS (Locks in the date and time variables first) ---
 ctrl_col1, ctrl_col2 = st.columns([1, 3])
 
 with ctrl_col1:
@@ -433,7 +453,6 @@ with ctrl_col2:
 
 st.divider()
 
-# --- 3. POPULATE THE TOP BANNER NOW THAT DATE IS SECURED ---
 tithi_message = get_tithi_info(selected_date.year, selected_date.month, selected_date.day, 9, 15)
 tithi_banner_placeholder.markdown(
     f"<div style='padding: 10px; border-radius: 5px; background-color: #2D3748; text-align: center; border: 1px solid #4A5568; margin-bottom: 20px;'>"
@@ -442,8 +461,6 @@ tithi_banner_placeholder.markdown(
     unsafe_allow_html=True
 )
 
-
-# --- 4. MAIN DASHBOARD CONTENT ---
 col_left, col_right = st.columns([6, 4], gap="large")
 
 with col_left:
@@ -455,11 +472,9 @@ with col_left:
         )
         st.pyplot(fig, use_container_width=True)
         
-    # --- BTST PREDICTOR PANEL ---
     if selected_time >= time(15, 15):
         st.markdown("---")
         st.markdown("### 🌙 BTST Astro-Gap Predictor (15:15 Trigger)")
-        # Calculate exactly at 15:15
         jd_close = get_jd(selected_date.year, selected_date.month, selected_date.day, 15, 15)
         moon_close = swe.calc_ut(jd_close, swe.MOON)[0][0]
         sun_close = swe.calc_ut(jd_close, swe.SUN)[0][0]
@@ -477,7 +492,6 @@ with col_right:
     
     st.subheader("Intraday Live Scoring")
     
-    # --- SHADASTAK 6/8 WARNING SYSTEM ---
     malefics = ["SA", "MA", "RA"]
     warnings = []
     for m in malefics:
@@ -491,7 +505,6 @@ with col_right:
         for w in warnings:
             st.warning(w)
             
-    # --- TRUE NIFTY SCORE ---
     banking_score = df_sectors[df_sectors["Sector"] == "Banking / Financials"].iloc[0]["Score"]
     it_score = df_sectors[df_sectors["Sector"] == "IT"].iloc[0]["Score"]
     energy_score = df_sectors[df_sectors["Sector"] == "Energy"].iloc[0]["Score"]
@@ -513,7 +526,6 @@ with col_right:
     
     st.divider()
     
-    # --- INDIVIDUAL SECTOR CARDS ---
     st.markdown("### Individual Sector True Scores")
     st.caption("Score incorporates Planet Zone + Nakshatra Lord Zone. ±2 required for strong conviction.")
     
