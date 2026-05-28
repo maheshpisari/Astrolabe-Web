@@ -3,9 +3,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import swisseph as swe
 import math
-from datetime import date, datetime, timedelta, timezone
+import pandas as pd
+from datetime import date, datetime, timedelta, timezone, time
 
-# Vimshottari Dasha Lord Sequence & Years
+# ==========================================
+# ASTROLOGY CONSTANTS & MAPPINGS
+# ==========================================
 NL_SEQUENCE = ["KE", "VE", "SU", "MO", "MA", "RA", "JU", "SA", "ME"]
 KP_YEARS = {"KE": 7, "VE": 20, "SU": 6, "MO": 10, "MA": 7, "RA": 18, "JU": 16, "SA": 19, "ME": 17}
 
@@ -18,33 +21,53 @@ LORD_TO_RASHIS = {}
 for rashi, lord in RASHI_LORDS.items():
     LORD_TO_RASHIS.setdefault(lord, []).append(rashi)
 
+SECTORS = {
+    "Banking / Financials": ["JU", "VE", "SA"],
+    "Auto": ["MA", "VE", "SU"],
+    "FMCG": ["MO", "VE", "JU"],
+    "IT": ["ME", "RA", "SA"],
+    "Infra": ["SA", "MA", "SU"],
+    "Reality": ["MO", "VE", "SA"],
+    "Pharma": ["KE", "SA", "JU"],
+    "Energy": ["SU", "MA", "SA"],
+    "Media": ["ME", "RA", "MO"],
+    "Metals": ["MA", "SA", "RA"]
+}
+
+ZONE_SCORES = [1, 1, -1, 1, 0, -1, 1, -1, 1, -1, 1, -1]
+
+# ==========================================
+# CORE CALCULATION FUNCTIONS
+# ==========================================
 def get_current_ist_rounded():
-    """Gets current IST time and rounds to the nearest 15 minutes."""
-    # 1. Get current UTC time and convert to IST (+5 hours 30 minutes)
     utc_now = datetime.now(timezone.utc)
     ist_now = utc_now + timedelta(hours=5, minutes=30)
-    
-    # 2. Round to the nearest 15 minutes
-    minute = 15 * round(ist_now.minute / 15)
-    
-    # 3. Handle the edge case where rounding pushes the minute to 60
+    minute = 5 * round(ist_now.minute / 5)
     if minute >= 60:
         ist_now += timedelta(hours=1)
         minute = 0
-        
     rounded_time = ist_now.replace(minute=minute, second=0, microsecond=0)
     
-    return rounded_time.date(), rounded_time.time()
+    final_time = rounded_time.time()
+    if final_time < time(9, 15): final_time = time(9, 15)
+    if final_time > time(15, 30): final_time = time(15, 30)
+    return rounded_time.date(), final_time
+
+def get_jd(year, month, day, hour, minute):
+    utc_hour = hour - 5
+    utc_min = minute - 30
+    if utc_min < 0:
+        utc_min += 60
+        utc_hour -= 1
+    return swe.julday(year, month, day, utc_hour + utc_min/60.0)
 
 def get_nl_sl(longitude):
     long_min = longitude * 60.0
     nak_idx = int(long_min / 800.0)
     nl = NL_SEQUENCE[nak_idx % 9]
-    
     rem_min = long_min % 800.0
     start_idx = NL_SEQUENCE.index(nl)
     cum_span = 0.0
-    
     for i in range(9):
         sl = NL_SEQUENCE[(start_idx + i) % 9]
         span = KP_YEARS[sl] * (800.0 / 120.0)
@@ -54,43 +77,19 @@ def get_nl_sl(longitude):
     return nl, nl
 
 def get_lagna(year, month, day, hour, minute):
-    utc_hour = hour - 5
-    utc_min = minute - 30
-    if utc_min < 0:
-        utc_min += 60
-        utc_hour -= 1
-        
-    jd = swe.julday(year, month, day, utc_hour + utc_min/60.0)
+    jd = get_jd(year, month, day, hour, minute)
     swe.set_sid_mode(swe.SIDM_LAHIRI)
     cusps, ascmc = swe.houses_ex(jd, 12.9716, 77.5946, b'P', swe.FLG_SIDEREAL)
     return int(math.floor(ascmc[0] + 0.5)) % 360
 
-def get_moon_nl_sl(year, month, day, hour, minute):
-    utc_hour = hour - 5
-    utc_min = minute - 30
-    if utc_min < 0:
-        utc_min += 60
-        utc_hour -= 1
-    jd = swe.julday(year, month, day, utc_hour + utc_min/60.0)
-    swe.set_sid_mode(swe.SIDM_LAHIRI)
-    pos, _ = swe.calc_ut(jd, swe.MOON, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
-    return get_nl_sl(pos[0])
-
 def get_planetary_positions(year, month, day, hour, minute):
-    utc_hour = hour - 5
-    utc_min = minute - 30
-    if utc_min < 0:
-        utc_min += 60
-        utc_hour -= 1
-        
-    jd = swe.julday(year, month, day, utc_hour + utc_min/60.0)
+    jd = get_jd(year, month, day, hour, minute)
     swe.set_sid_mode(swe.SIDM_LAHIRI)
     
     planets = {
         "SU": swe.SUN, "MO": swe.MOON, "MA": swe.MARS, "ME": swe.MERCURY, 
         "JU": swe.JUPITER, "VE": swe.VENUS, "SA": swe.SATURN, "RA": swe.MEAN_NODE
     }
-    
     positions = {}
     ra_exact_lon = 0
     for name, p_id in planets.items():
@@ -102,12 +101,137 @@ def get_planetary_positions(year, month, day, hour, minute):
     ke_exact_lon = (ra_exact_lon + 180) % 360
     ke_nl, ke_sl = get_nl_sl(ke_exact_lon)
     positions["KE"] = {"deg": int(math.floor(ke_exact_lon + 0.5)) % 360, "nl": ke_nl, "sl": ke_sl}
-    
     return positions
+
+def get_tithi_info(year, month, day, hour=9, minute=15):
+    """Calculates the Tithi and returns the market sentiment for the day."""
+    jd = get_jd(year, month, day, hour, minute)
+    swe.set_sid_mode(swe.SIDM_LAHIRI)
+    sun_pos, _ = swe.calc_ut(jd, swe.SUN, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
+    moon_pos, _ = swe.calc_ut(jd, swe.MOON, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
+    
+    diff = (moon_pos[0] - sun_pos[0]) % 360
+    tithi_num = math.floor(diff / 12) + 1
+    
+    # 1-15 Shukla Paksha, 16-30 Krishna Paksha
+    t_type = tithi_num % 5
+    if t_type == 1:
+        return f"Tithi {tithi_num} (Nanda) - 📈 Trending Day Likely. Ride the momentum."
+    elif t_type == 2:
+        return f"Tithi {tithi_num} (Bhadra) - ⚖️ Steady/Balanced Day. Respect technical levels."
+    elif t_type == 3:
+        return f"Tithi {tithi_num} (Jaya) - 🚀 Victory/Bullish Bias. Look for breakout longs."
+    elif t_type == 4:
+        return f"Tithi {tithi_num} (Rikta) - ⚠️ 'Empty' Hands. High Risk of SL Hunting & Volatility."
+    else: # 0 (which is 5, 10, 15)
+        return f"Tithi {tithi_num} (Purna) - 🔄 Reversal Day. Watch for major market turning points."
 
 def ang_dist(d1, d2):
     return min(abs(d1 - d2), 360 - abs(d1 - d2))
 
+# ==========================================
+# ADVANCED SECTOR SCORING (NAKSHATRA FILTER)
+# ==========================================
+def calculate_sector_scores(year, month, day, hour, minute):
+    lagna = get_lagna(year, month, day, hour, minute)
+    planets = get_planetary_positions(year, month, day, hour, minute)
+    inner_offset = 30 - lagna
+    
+    planet_true_scores = {}
+    
+    # NEW LOGIC: Planet Zone Score + Nakshatra Lord Zone Score
+    for p_name, data in planets.items():
+        # Planet's own zone
+        shifted_deg = (data["deg"] + inner_offset) % 360
+        planet_zone_score = ZONE_SCORES[int(shifted_deg // 30)]
+        
+        # Nakshatra Lord's zone
+        nl = data["nl"]
+        nl_shifted_deg = (planets[nl]["deg"] + inner_offset) % 360
+        nl_zone_score = ZONE_SCORES[int(nl_shifted_deg // 30)]
+        
+        # True Strength = Combined Alignment
+        planet_true_scores[p_name] = planet_zone_score + nl_zone_score
+        
+    sector_results = []
+    for sector, governing_planets in SECTORS.items():
+        score = sum([planet_true_scores[p] for p in governing_planets])
+        
+        if score >= 2:
+            sentiment = "Strong Buy"
+            color = "#00CC96" 
+        elif score <= -2:
+            sentiment = "Strong Sell"
+            color = "#EF553B" 
+        else:
+            sentiment = "Choppy / Wait"
+            color = "#888888" 
+            
+        sector_results.append({
+            "Sector": sector,
+            "Score": score,
+            "Sentiment": sentiment,
+            "Color": color
+        })
+        
+    return pd.DataFrame(sector_results), planets, lagna
+
+# ==========================================
+# PRE-CALCULATED DAILY TIMELINES (CACHED)
+# ==========================================
+@st.cache_data(show_spinner=False)
+def generate_all_trends_html(year, month, day):
+    start_t = datetime(year, month, day, 9, 15)
+    end_t = datetime(year, month, day, 15, 30)
+    
+    nifty_html_parts = []
+    sector_html_parts = {s: [] for s in SECTORS.keys()}
+    
+    curr_t = start_t
+    while curr_t <= end_t:
+        df_sectors, _, _ = calculate_sector_scores(year, month, day, curr_t.hour, curr_t.minute)
+        time_str = curr_t.strftime("%H:%M")
+        
+        banking = df_sectors[df_sectors["Sector"] == "Banking / Financials"].iloc[0]["Score"]
+        it = df_sectors[df_sectors["Sector"] == "IT"].iloc[0]["Score"]
+        energy = df_sectors[df_sectors["Sector"] == "Energy"].iloc[0]["Score"]
+        fmcg = df_sectors[df_sectors["Sector"] == "FMCG"].iloc[0]["Score"]
+        
+        nifty_total = (banking * 3) + (it * 2) + energy + fmcg
+        
+        if nifty_total >= 6: n_color = "#00CC96"
+        elif nifty_total <= -6: n_color = "#EF553B"
+        else: n_color = "#2b2b2b"
+            
+        n_hover = f"{time_str} | True Score: {nifty_total}"
+        nifty_html_parts.append(f"<div style='flex: 1; background-color: {n_color}; border-right: 1px solid #111;' title='{n_hover}'></div>")
+        
+        for _, row in df_sectors.iterrows():
+            s_name = row["Sector"]
+            s_score = row["Score"]
+            
+            if s_score >= 2: s_color = "#00CC96"
+            elif s_score <= -2: s_color = "#EF553B"
+            else: s_color = "#2b2b2b"
+                
+            s_hover = f"{time_str} | Score: {s_score:+}"
+            sector_html_parts[s_name].append(f"<div style='flex: 1; background-color: {s_color}; border-right: 1px solid #222;' title='{s_hover}'></div>")
+            
+        curr_t += timedelta(minutes=5)
+        
+    nifty_html = "<div style='display: flex; width: 100%; height: 25px; border-radius: 5px; overflow: hidden; border: 1px solid #444;'>" + "".join(nifty_html_parts) + "</div>"
+    nifty_html += "<div style='display: flex; justify-content: space-between; font-size: 12px; color: #aaa; margin-top: 4px; font-weight: bold;'><span>09:15</span><span>12:15</span><span>15:30</span></div>"
+    
+    sector_html_dict = {}
+    for s_name, parts in sector_html_parts.items():
+        s_html = "<div style='display: flex; width: 100%; height: 12px; border-radius: 3px; overflow: hidden; border: 1px solid #444; margin-top: 10px;'>" + "".join(parts) + "</div>"
+        sector_html_dict[s_name] = s_html
+        
+    return nifty_html, sector_html_dict
+
+# ==========================================
+# CIRCULAR HOROSCOPE DRAWING ENGINE
+# ==========================================
 def draw_circular_horoscope(year, month, day, hour, minute):
     current_lagna = get_lagna(year, month, day, hour, minute)
     planet_positions = get_planetary_positions(year, month, day, hour, minute)
@@ -124,52 +248,45 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         
     moon_transitions = []
     curr_m = start_t
-    prev_nl, prev_sl = get_moon_nl_sl(year, month, day, curr_m.hour, curr_m.minute)
+    prev_nl = planet_positions["MO"]["nl"]
     l_val_start = get_lagna(year, month, day, curr_m.hour, curr_m.minute)
-    moon_transitions.append((l_val_start, f"{prev_nl}-{prev_sl}"))
+    moon_transitions.append((l_val_start, f"Moon->{prev_nl}"))
     
-    curr_m += timedelta(minutes=1)
-    while curr_m <= end_t:
-        curr_nl, curr_sl = get_moon_nl_sl(year, month, day, curr_m.hour, curr_m.minute)
-        if curr_nl != prev_nl or curr_sl != prev_sl:
-            l_val = get_lagna(year, month, day, curr_m.hour, curr_m.minute)
-            moon_transitions.append((l_val, f"{curr_nl}-{curr_sl}"))
-            prev_nl, prev_sl = curr_nl, curr_sl
-        curr_m += timedelta(minutes=1)
-
     fig = plt.figure(figsize=(16, 16), dpi=150) 
+    fig.patch.set_facecolor('#0e1117') 
     ax = fig.add_subplot(111, projection='polar')
+    ax.set_facecolor('#0e1117')
     ax.set_theta_zero_location("N") 
     ax.set_theta_direction(1)       
     ax.axis('off')
 
     theta_circle = np.linspace(0, 2 * np.pi, 500)
-    ax.plot(theta_circle, np.full_like(theta_circle, 10), color='black', lw=2, zorder=3)
-    ax.plot(theta_circle, np.full_like(theta_circle, 14), color='black', lw=2, zorder=3)
+    ax.plot(theta_circle, np.full_like(theta_circle, 10), color='white', lw=2, zorder=3)
+    ax.plot(theta_circle, np.full_like(theta_circle, 14), color='white', lw=2, zorder=3)
 
     market_zones = [
-        (0, "+ve stability in market", "green"), (30, "Accumulation, internal buying", "blue"),
-        (60, "-ve disposal / selling", "red"), (90, "+ve less up move, no down", "green"),
-        (120, "Sideways no buying or selling", "black"), (150, "-ve selling / profit booking", "red"),
-        (180, "+ve uprise / partner", "green"), (210, "-ve loss / obstacle", "red"),
-        (240, "+ve gain house, income house", "green"), (270, "-ve consumption of income", "red"),
-        (300, "+ve big lots buying", "green"), (330, "-ve heavily -ve", "red")
+        (0, "+ve stability in market", "#00CC96"), (30, "Accumulation, internal buying", "#636EFA"),
+        (60, "-ve disposal / selling", "#EF553B"), (90, "+ve less up move, no down", "#00CC96"),
+        (120, "Sideways no buying or selling", "gray"), (150, "-ve selling / profit booking", "#EF553B"),
+        (180, "+ve uprise / partner", "#00CC96"), (210, "-ve loss / obstacle", "#EF553B"),
+        (240, "+ve gain house, income house", "#00CC96"), (270, "-ve consumption of income", "#EF553B"),
+        (300, "+ve big lots buying", "#00CC96"), (330, "-ve heavily -ve", "#EF553B")
     ]
 
     for angle in range(0, 360, 30):
         theta = np.radians(angle)
-        ax.plot([theta, theta], [10, 14], color='black', lw=2, zorder=2)
-        ax.text(theta, 14.5, f"{angle}°", ha='center', va='center', fontsize=14, fontweight='bold')
+        ax.plot([theta, theta], [10, 14], color='white', lw=1.5, zorder=2)
+        ax.text(theta, 14.5, f"{angle}°", ha='center', va='center', fontsize=14, fontweight='bold', color='white')
 
     for start_deg, text, color in market_zones:
         center_deg = start_deg + 15
         theta = np.radians(center_deg)
         rot = center_deg
         if 90 < rot <= 270: rot += 180
-        ax.text(theta, 12.0, text, ha='center', va='center', fontsize=12, fontweight='bold', color=color, rotation=rot)
+        ax.text(theta, 12.0, text, ha='center', va='center', fontsize=11, fontweight='bold', color=color, rotation=rot)
 
-    ax.plot(theta_circle, np.full_like(theta_circle, 4), color='black', lw=1.5, zorder=3)
-    ax.plot(theta_circle, np.full_like(theta_circle, 7), color='black', lw=1.5, zorder=3)
+    ax.plot(theta_circle, np.full_like(theta_circle, 4), color='white', lw=1.5, zorder=3)
+    ax.plot(theta_circle, np.full_like(theta_circle, 7), color='white', lw=1.5, zorder=3)
 
     empty_rashis = []
     for rashi_idx in range(1, 13):
@@ -178,16 +295,16 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         has_planet = any(start_angle <= data["deg"] < end_angle for data in planet_positions.values())
         if not has_planet:
             empty_rashis.append(rashi_idx) 
-            ax.fill_between(np.radians(np.linspace(start_angle + inner_offset, end_angle + inner_offset, 50)), 0, 4, color='lightgrey', alpha=0.6, zorder=1)
+            ax.fill_between(np.radians(np.linspace(start_angle + inner_offset, end_angle + inner_offset, 50)), 0, 4, color='#1f2937', alpha=0.6, zorder=1)
 
     for angle in range(0, 360, 5):
         theta = np.radians(angle + inner_offset)
         if angle % 30 == 0:
-            ax.plot([theta, theta], [0, 10], color='black', lw=2, zorder=2)
-            ax.text(np.radians(angle + 15 + inner_offset), 10.8, str((angle // 30) + 1), ha='center', va='center', fontsize=22, fontweight='bold', color='darkred')
+            ax.plot([theta, theta], [0, 10], color='white', lw=2, zorder=2)
+            ax.text(np.radians(angle + 15 + inner_offset), 10.8, str((angle // 30) + 1), ha='center', va='center', fontsize=22, fontweight='bold', color='#FFA15A')
         else:
             ax.plot([theta, theta], [0, 10], color='gray', lw=1, linestyle='--', zorder=2)
-            ax.text(theta, 9.4, str(angle % 30), ha='center', va='center', fontsize=9, color='blue', fontweight='bold')
+            ax.text(theta, 9.4, str(angle % 30), ha='center', va='center', fontsize=9, color='#AB63FA', fontweight='bold')
 
     used_positions_inner = []
     for planet, data in planet_positions.items():
@@ -197,7 +314,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         while any(ang_dist(shifted_deg, p_deg) < 4.0 and abs(radius - p_rad) < 0.6 for p_deg, p_rad in used_positions_inner):
             radius -= 0.65 
         used_positions_inner.append((shifted_deg, radius))
-        ax.text(theta, radius, planet, ha='center', va='center', fontsize=10, fontweight='bold', color='purple', bbox=dict(boxstyle="round,pad=0.03", fc="white", ec="none", alpha=0.9), zorder=6)
+        ax.text(theta, radius, planet, ha='center', va='center', fontsize=9, fontweight='bold', color='black', bbox=dict(boxstyle="circle,pad=0.2", fc="#E2E8F0", ec="none", alpha=1.0), zorder=6)
 
     ring1_plots = {p: [] for p in planet_positions.keys()}
     for planet, data in planet_positions.items():
@@ -228,111 +345,164 @@ def draw_circular_horoscope(year, month, day, hour, minute):
             while any(ang_dist(shifted_deg, p_deg) < 3.5 and abs(radius - p_rad) < 0.45 for p_deg, p_rad in used_positions_ring1):
                 radius += 0.45 
             used_positions_ring1.append((shifted_deg, radius))
-            ax.text(theta, radius, visitor, ha='center', va='center', fontsize=7, fontweight='bold', color='teal', bbox=dict(boxstyle="round,pad=0.03", fc="white", ec="black", lw=0.5, alpha=0.9), zorder=6)
-
-    rashi_governors = {r: [] for r in empty_rashis}
-    for planet, data in planet_positions.items():
-        nl = data["nl"]
-        effective_lord = RASHI_LORDS[(planet_positions[nl]["deg"] // 30) + 1] if nl in ["RA", "KE"] else nl
-        for r_owned in LORD_TO_RASHIS.get(effective_lord, []):
-            if r_owned in empty_rashis and planet not in rashi_governors[r_owned]:
-                rashi_governors[r_owned].append(planet)
-
-    for rashi_idx, governors in rashi_governors.items():
-        if not governors: continue
-        ring1_rashi_filled[rashi_idx] = True
-        for g in governors: ring1_where_is_planet[g]["rashis"].add(rashi_idx) 
-        theta = np.radians(((rashi_idx - 1) * 30 + 15 + inner_offset) % 360)
-        ax.text(theta, 5.5, "-".join(governors), ha='center', va='center', fontsize=11, fontweight='bold', color='darkblue', bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="teal", lw=1.5, alpha=0.95), zorder=7)
-        ax.annotate('', xy=(theta + np.radians(13.5), 5.5), xytext=(theta + np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='teal', lw=2, mutation_scale=12), zorder=6)
-        ax.annotate('', xy=(theta - np.radians(13.5), 5.5), xytext=(theta - np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='teal', lw=2, mutation_scale=12), zorder=6)
+            ax.text(theta, radius, visitor, ha='center', va='center', fontsize=7, fontweight='bold', color='#111827', bbox=dict(boxstyle="round,pad=0.1", fc="#93C5FD", ec="white", lw=0.5, alpha=0.9), zorder=6)
 
     for r in range(1, 13):
         if not ring1_rashi_filled[r]:
             lord = RASHI_LORDS[r]
             ring1_where_is_planet.setdefault(lord, {"degrees": set(), "rashis": set()})["rashis"].add(r)
             theta = np.radians(((r - 1) * 30 + 15 + inner_offset) % 360)
-            ax.text(theta, 5.5, lord, ha='center', va='center', fontsize=11, fontweight='bold', color='darkblue', bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="teal", lw=1.5, alpha=0.95), zorder=7)
-            ax.annotate('', xy=(theta + np.radians(13.5), 5.5), xytext=(theta + np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='teal', lw=2, mutation_scale=12), zorder=6)
-            ax.annotate('', xy=(theta - np.radians(13.5), 5.5), xytext=(theta - np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='teal', lw=2, mutation_scale=12), zorder=6)
-
-    ring2_plots_radial = {}
-    ring2_governors = {r: [] for r in empty_rashis}
-    ring2_rashi_filled = {r: False for r in range(1, 13)}
-
-    for planet, data in planet_positions.items():
-        sl = data["sl"]
-        if sl in ring1_where_is_planet:
-            for deg in ring1_where_is_planet[sl]["degrees"]: ring2_plots_radial.setdefault(deg, []).append(planet)
-            for r_idx in ring1_where_is_planet[sl]["rashis"]:
-                if planet not in ring2_governors[r_idx]: ring2_governors[r_idx].append(planet)
-
-    used_positions_ring2 = []
-    for target_deg, visitors in ring2_plots_radial.items():
-        shifted_deg = (target_deg + inner_offset) % 360
-        theta = np.radians(shifted_deg)
-        if visitors: ring2_rashi_filled[(target_deg // 30) + 1] = True
-        for visitor in visitors:
-            radius = 7.3 
-            while any(ang_dist(shifted_deg, p_deg) < 3.5 and abs(radius - p_rad) < 0.45 for p_deg, p_rad in used_positions_ring2):
-                radius += 0.45 
-            used_positions_ring2.append((shifted_deg, radius))
-            ax.text(theta, radius, visitor, ha='center', va='center', fontsize=7, fontweight='bold', color='indigo', bbox=dict(boxstyle="round,pad=0.03", fc="white", ec="black", lw=0.5, alpha=0.9), zorder=6)
-
-    for rashi_idx, governors in ring2_governors.items():
-        if not governors: continue
-        ring2_rashi_filled[rashi_idx] = True
-        theta = np.radians(((rashi_idx - 1) * 30 + 15 + inner_offset) % 360)
-        ax.text(theta, 8.5, "-".join(governors), ha='center', va='center', fontsize=11, fontweight='bold', color='darkred', bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="indigo", lw=1.5, alpha=0.95), zorder=7)
-        ax.annotate('', xy=(theta + np.radians(13.5), 8.5), xytext=(theta + np.radians(7), 8.5), arrowprops=dict(arrowstyle="-|>", color='indigo', lw=2, mutation_scale=12), zorder=6)
-        ax.annotate('', xy=(theta - np.radians(13.5), 8.5), xytext=(theta - np.radians(7), 8.5), arrowprops=dict(arrowstyle="-|>", color='indigo', lw=2, mutation_scale=12), zorder=6)
-
-    for r in range(1, 13):
-        if not ring2_rashi_filled[r]:
-            t_start = np.radians(((r - 1) * 30 + inner_offset) % 360)
-            t_end = np.radians((r * 30 + inner_offset) % 360)
-            ax.plot([t_start, t_end], [7, 10], color='red', lw=3, alpha=0.5, zorder=3)
-            ax.plot([t_start, t_end], [10, 7], color='red', lw=3, alpha=0.5, zorder=3)
+            ax.text(theta, 5.5, lord, ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#3B82F6", ec="none", alpha=0.95), zorder=7)
 
     for t_str, l_val in time_markers:
         theta = np.radians((l_val + inner_offset) % 360)
-        ax.plot([theta, theta], [10, 14], color='black', lw=1.5, linestyle=':', zorder=4)
+        ax.plot([theta, theta], [10, 14], color='gray', lw=1.5, linestyle=':', zorder=4)
         rot_deg = (l_val + inner_offset) % 360
         if 90 < rot_deg <= 270: rot_deg += 180
-        ax.text(theta, 13.0, f"L-{t_str}" if t_str == "09:15" else t_str, ha='center', va='center', rotation=rot_deg, fontsize=8 if t_str == "09:15" else 5.5, fontweight='bold', color='magenta' if t_str == "09:15" else 'black', bbox=dict(boxstyle="square,pad=0.15", fc="white", ec="none", alpha=1.0), zorder=5)
-
-    for l_val, transition_text in moon_transitions:
-        theta = np.radians((l_val + inner_offset) % 360)
-        ax.plot([theta, theta], [10, 14], color='black', lw=2, linestyle='--', zorder=4)
-        rot_deg = (l_val + inner_offset) % 360
-        if 90 < rot_deg <= 270: rot_deg += 180
-        ax.text(theta, 13.6, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=7, fontweight='bold', color='black', bbox=dict(boxstyle="square,pad=0.1", fc="white", ec="black", lw=1.0, alpha=0.9), zorder=5)
+        
+        is_current = (t_str == f"{hour:02d}:{minute:02d}")
+        f_size = 9 if is_current else 6
+        color = '#00CC96' if is_current else 'gray'
+        ax.text(theta, 13.0, f"L-{t_str}", ha='center', va='center', rotation=rot_deg, fontsize=f_size, fontweight='bold', color=color, bbox=dict(boxstyle="round,pad=0.15", fc="#1f2937", ec="none", alpha=0.9), zorder=5)
 
     plt.tight_layout()
     return fig
 
-# --- STREAMLIT UI ---
+# ==========================================
+# STREAMLIT UI (LAYOUT & DASHBOARD)
+# ==========================================
 st.set_page_config(layout="wide", page_title="Astrolabe Explorer")
-st.title("Financial Astrolabe Explorer")
-st.markdown("Explore intraday astrological shifts dynamically. No database required.")
 
-# Fetch the live, rounded IST date and time
 default_date, default_time = get_current_ist_rounded()
 
-col1, col2 = st.columns(2)
-with col1:
-    selected_date = st.date_input("Select Date", default_date)
-with col2:
-    selected_time = st.time_input("Select Time", default_time)
+if "time_slider" not in st.session_state:
+    st.session_state.time_slider = default_time
+
+def reset_time_on_date_change():
+    st.session_state.time_slider = time(9, 15)
+
+# --- 1. TITLE & BANNER PLACEHOLDER (Ensures banner stays at the top) ---
+st.title("Financial Astrolabe - Master Edition")
+tithi_banner_placeholder = st.empty()
+
+# --- 2. CONTROLS (Locks in the date and time variables first) ---
+ctrl_col1, ctrl_col2 = st.columns([1, 3])
+
+with ctrl_col1:
+    selected_date = st.date_input("Select Date", default_date, on_change=reset_time_on_date_change)
+    
+with ctrl_col2:
+    with st.spinner("Pre-calculating Nakshatra filters..."):
+        nifty_trend_html, sector_trend_htmls = generate_all_trends_html(selected_date.year, selected_date.month, selected_date.day)
+        st.markdown(nifty_trend_html, unsafe_allow_html=True)
+    
+    selected_time = st.slider(
+        "⏳ Slide to Rotate Time",
+        min_value=time(9, 15),
+        max_value=time(15, 30),
+        value=st.session_state.time_slider,
+        step=timedelta(minutes=5),
+        format="HH:mm",
+        key="time_slider",
+        label_visibility="collapsed"
+    )
 
 st.divider()
 
-with st.spinner("Calculating Ephemeris..."):
-    fig = draw_circular_horoscope(
-        selected_date.year, 
-        selected_date.month, 
-        selected_date.day, 
-        selected_time.hour, 
-        selected_time.minute
+# --- 3. POPULATE THE TOP BANNER NOW THAT DATE IS SECURED ---
+tithi_message = get_tithi_info(selected_date.year, selected_date.month, selected_date.day, 9, 15)
+tithi_banner_placeholder.markdown(
+    f"<div style='padding: 10px; border-radius: 5px; background-color: #2D3748; text-align: center; border: 1px solid #4A5568; margin-bottom: 20px;'>"
+    f"<h4 style='color: #E2E8F0; margin: 0;'>🌌 Daily Cosmic Environment: {tithi_message}</h4>"
+    f"</div>", 
+    unsafe_allow_html=True
+)
+
+
+# --- 4. MAIN DASHBOARD CONTENT ---
+col_left, col_right = st.columns([6, 4], gap="large")
+
+with col_left:
+    st.subheader(f"Astrolabe Rotation at {selected_time.strftime('%H:%M')}")
+    with st.spinner("Calculating rotation..."):
+        fig = draw_circular_horoscope(
+            selected_date.year, selected_date.month, selected_date.day, 
+            selected_time.hour, selected_time.minute
+        )
+        st.pyplot(fig, use_container_width=True)
+        
+    # --- BTST PREDICTOR PANEL ---
+    if selected_time >= time(15, 15):
+        st.markdown("---")
+        st.markdown("### 🌙 BTST Astro-Gap Predictor (15:15 Trigger)")
+        # Calculate exactly at 15:15
+        jd_close = get_jd(selected_date.year, selected_date.month, selected_date.day, 15, 15)
+        moon_close = swe.calc_ut(jd_close, swe.MOON)[0][0]
+        sun_close = swe.calc_ut(jd_close, swe.SUN)[0][0]
+        
+        if moon_close > sun_close:
+            st.success("**GAP UP EXPECTED**\nThe Moon's longitudinal dominance over the Sun at market close favors positive overnight sentiment.")
+        else:
+            st.error("**GAP DOWN EXPECTED**\nThe Sun's dominance over the Moon at market close suggests overnight pressure / Gap Down.")
+
+with col_right:
+    df_sectors, planet_positions, current_lagna = calculate_sector_scores(
+        selected_date.year, selected_date.month, selected_date.day, 
+        selected_time.hour, selected_time.minute
     )
-    st.pyplot(fig, use_container_width=False)
+    
+    st.subheader("Intraday Live Scoring")
+    
+    # --- SHADASTAK 6/8 WARNING SYSTEM ---
+    malefics = ["SA", "MA", "RA"]
+    warnings = []
+    for m in malefics:
+        dist = ang_dist(current_lagna, planet_positions[m]["deg"])
+        if abs(dist - 150) < 3 or abs(dist - 210) < 3:
+            warnings.append(f"⚠️ **6/8 Shadastak Alert:** Lagna is severely afflicted by {m}. High risk of sudden intraday reversal or heavy profit booking right now.")
+        elif abs(dist - 90) < 3:
+            warnings.append(f"⚠️ **4/10 Square Alert:** Lagna is squaring {m}. Expect friction and sudden volatility spikes.")
+            
+    if warnings:
+        for w in warnings:
+            st.warning(w)
+            
+    # --- TRUE NIFTY SCORE ---
+    banking_score = df_sectors[df_sectors["Sector"] == "Banking / Financials"].iloc[0]["Score"]
+    it_score = df_sectors[df_sectors["Sector"] == "IT"].iloc[0]["Score"]
+    energy_score = df_sectors[df_sectors["Sector"] == "Energy"].iloc[0]["Score"]
+    fmcg_score = df_sectors[df_sectors["Sector"] == "FMCG"].iloc[0]["Score"]
+    
+    nifty_total = (banking_score * 3) + (it_score * 2) + energy_score + fmcg_score
+    
+    st.markdown("### NIFTY 50 Directional Bias (True Strength)")
+    if nifty_total >= 6:
+        st.success(f"📈 **POWERFUL BULLISH (+)**\n\nNIFTY True Score: **{nifty_total}**\n\nHeavyweights AND their Star Lords are aligned in positive zones.")
+    elif nifty_total <= -6:
+        st.error(f"📉 **POWERFUL BEARISH (-)**\n\nNIFTY True Score: **{nifty_total}**\n\nHeavyweights AND their Star Lords are aligned in disposal zones.")
+    elif nifty_total > 0:
+        st.info(f"↗️ **SLIGHT BULLISH / SIDEWAYS**\n\nNIFTY True Score: **{nifty_total}**\n\nMixed Star Lord support. Watch technical breakouts.")
+    elif nifty_total < 0:
+        st.warning(f"↘️ **SLIGHT BEARISH / SIDEWAYS**\n\nNIFTY True Score: **{nifty_total}**\n\nMixed Star Lord support. Watch technical breakdowns.")
+    else:
+        st.warning(f"⚖️ **CHOPPY / NEUTRAL**\n\nNIFTY True Score: **0**\n\nPlanets and Star Lords are completely contradicting each other. Avoid Index trading.")
+    
+    st.divider()
+    
+    # --- INDIVIDUAL SECTOR CARDS ---
+    st.markdown("### Individual Sector True Scores")
+    st.caption("Score incorporates Planet Zone + Nakshatra Lord Zone. ±2 required for strong conviction.")
+    
+    grid_cols = st.columns(2)
+    for index, row in df_sectors.iterrows():
+        col = grid_cols[index % 2]
+        sector_name = row['Sector']
+        with col:
+            st.markdown(
+                f"<div style='padding: 10px; border-radius: 5px; background-color: #1f2937; margin-bottom: 10px; border-left: 5px solid {row['Color']}'>"
+                f"<strong style='color: white; font-size: 16px;'>{sector_name}</strong><br>"
+                f"<span style='color: {row['Color']}; font-weight: bold;'>True Score: {row['Score']:+d} ({row['Sentiment']})</span>"
+                f"{sector_trend_htmls[sector_name]}"
+                f"</div>", 
+                unsafe_allow_html=True
+            )
