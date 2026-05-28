@@ -6,6 +6,30 @@ import math
 import pandas as pd
 from datetime import date, datetime, timedelta, timezone, time
 
+# --- 1. PASSWORD PROTECTION GATE ---
+def check_password():
+    """Returns `True` if the user had the correct password."""
+    # If they already logged in during this session, let them through
+    if st.session_state.get("password_correct", False):
+        return True
+
+    # Show input for password
+    st.markdown("### 🔒 Astrolabe Secure Login")
+    entered_pwd = st.text_input("Enter Passkey", type="password")
+    
+    if entered_pwd:
+        if entered_pwd == st.secrets["app_password"]:
+            st.session_state["password_correct"] = True
+            st.rerun() # Refresh to show the app
+        else:
+            st.error("Incorrect password.")
+            
+    return False
+
+# Stop the app from running the rest of the code if password is wrong
+if not check_password():
+    st.stop()
+
 # ==========================================
 # ASTROLOGY CONSTANTS & MAPPINGS
 # ==========================================
