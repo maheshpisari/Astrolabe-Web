@@ -165,17 +165,16 @@ def ang_dist(d1, d2):
 def calculate_sector_scores(year, month, day, hour, minute):
     lagna = get_lagna(year, month, day, hour, minute)
     planets = get_planetary_positions(year, month, day, hour, minute)
+    inner_offset = 30 - lagna
     
     planet_true_scores = {}
     
     for p_name, data in planets.items():
-        # Score based on Planet's distance from Lagna
-        shifted_deg = (data["deg"] + 30 - lagna) % 360
+        shifted_deg = (data["deg"] + inner_offset) % 360
         planet_zone_score = ZONE_SCORES[int(shifted_deg // 30)]
         
-        # Score based on Nakshatra Lord's distance from Lagna
         nl = data["nl"]
-        nl_shifted_deg = (planets[nl]["deg"] + 30 - lagna) % 360
+        nl_shifted_deg = (planets[nl]["deg"] + inner_offset) % 360
         nl_zone_score = ZONE_SCORES[int(nl_shifted_deg // 30)]
         
         planet_true_scores[p_name] = planet_zone_score + nl_zone_score
@@ -262,6 +261,7 @@ def generate_all_trends_html(year, month, day):
 def draw_circular_horoscope(year, month, day, hour, minute):
     current_lagna = get_lagna(year, month, day, hour, minute)
     planet_positions = get_planetary_positions(year, month, day, hour, minute)
+    inner_offset = 30 - current_lagna
 
     time_markers = []
     start_t = datetime(year, month, day, 9, 15)
@@ -308,34 +308,15 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         (300, "+ve big lots buying", "#00CC96"), (330, "-ve heavily -ve", "#EF553B")
     ]
 
-    # --- FIXED: Rashi Boundaries and inner grid (0 to 10) ---
-    for angle in range(0, 360, 5):
-        theta = np.radians(angle) # True Sidereal
-        if angle % 30 == 0:
-            ax.plot([theta, theta], [0, 10], color='white', lw=2, zorder=2)
-            # Rashi Number 1 falls between 0 and 30 degrees
-            ax.text(np.radians(angle + 15), 10.8, str((angle // 30) + 1), ha='center', va='center', fontsize=22, fontweight='bold', color='#FFA15A')
-        else:
-            ax.plot([theta, theta], [0, 10], color='gray', lw=1, linestyle='--', zorder=2)
-            ax.text(theta, 9.4, str(angle % 30), ha='center', va='center', fontsize=9, color='#AB63FA', fontweight='bold')
-
-    # --- FIXED: Outer Degree Labels (Radius 14.5) ---
     for angle in range(0, 360, 30):
         theta = np.radians(angle)
+        ax.plot([theta, theta], [10, 14], color='white', lw=1.5, zorder=2)
         ax.text(theta, 14.5, f"{angle}°", ha='center', va='center', fontsize=14, fontweight='bold', color='white')
 
-    # --- DYNAMIC: Rotating Market Zones (Houses tracking the Lagna) ---
-    for angle in range(0, 360, 30):
-        # Draw the boundary lines inside the market zone ring (10 to 14)
-        actual_boundary = (angle + current_lagna - 30) % 360
-        theta = np.radians(actual_boundary)
-        ax.plot([theta, theta], [10, 14], color='white', lw=1.5, zorder=2)
-
     for start_deg, text, color in market_zones:
-        base_center = start_deg + 15
-        actual_center = (base_center + current_lagna - 30) % 360
-        theta = np.radians(actual_center)
-        rot = actual_center
+        center_deg = start_deg + 15
+        theta = np.radians(center_deg)
+        rot = center_deg
         if 90 < rot <= 270: rot += 180
         ax.text(theta, 12.0, text, ha='center', va='center', fontsize=11, fontweight='bold', color=color, rotation=rot)
 
@@ -349,12 +330,20 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         has_planet = any(start_angle <= data["deg"] < end_angle for data in planet_positions.values())
         if not has_planet:
             empty_rashis.append(rashi_idx) 
-            ax.fill_between(np.radians(np.linspace(start_angle, end_angle, 50)), 0, 4, color='#1f2937', alpha=0.6, zorder=1)
+            ax.fill_between(np.radians(np.linspace(start_angle + inner_offset, end_angle + inner_offset, 50)), 0, 4, color='#1f2937', alpha=0.6, zorder=1)
 
-    # --- TRUE SIDEREAL: Plot Planets ---
+    for angle in range(0, 360, 5):
+        theta = np.radians(angle + inner_offset)
+        if angle % 30 == 0:
+            ax.plot([theta, theta], [0, 10], color='white', lw=2, zorder=2)
+            ax.text(np.radians(angle + 15 + inner_offset), 10.8, str((angle // 30) + 1), ha='center', va='center', fontsize=22, fontweight='bold', color='#FFA15A')
+        else:
+            ax.plot([theta, theta], [0, 10], color='gray', lw=1, linestyle='--', zorder=2)
+            ax.text(theta, 9.4, str(angle % 30), ha='center', va='center', fontsize=9, color='#AB63FA', fontweight='bold')
+
     used_positions_inner = []
     for planet, data in planet_positions.items():
-        shifted_deg = data["deg"]
+        shifted_deg = (data["deg"] + inner_offset) % 360
         theta = np.radians(shifted_deg)
         radius = 3.4 
         while any(ang_dist(shifted_deg, p_deg) < 4.0 and abs(radius - p_rad) < 0.6 for p_deg, p_rad in used_positions_inner):
@@ -362,7 +351,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         used_positions_inner.append((shifted_deg, radius))
         ax.text(theta, radius, planet, ha='center', va='center', fontsize=9, fontweight='bold', color='black', bbox=dict(boxstyle="circle,pad=0.2", fc="#E2E8F0", ec="none", alpha=1.0), zorder=6)
 
-    # --- TRUE SIDEREAL: RING 1 - Nakshatra Lords ---
+    # --- RING 1: Nakshatra Lords ---
     ring1_plots = {p: [] for p in planet_positions.keys()}
     for planet, data in planet_positions.items():
         nl = data["nl"]
@@ -382,7 +371,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
     for target_planet, visitors in ring1_plots.items():
         if not visitors: continue
         target_deg = planet_positions[target_planet]["deg"]
-        shifted_deg = target_deg
+        shifted_deg = (target_deg + inner_offset) % 360
         theta = np.radians(shifted_deg)
         ring1_rashi_filled[(target_deg // 30) + 1] = True
         
@@ -406,7 +395,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         if not governors: continue
         ring1_rashi_filled[rashi_idx] = True
         for g in governors: ring1_where_is_planet[g]["rashis"].add(rashi_idx) 
-        theta = np.radians(((rashi_idx - 1) * 30 + 15) % 360)
+        theta = np.radians(((rashi_idx - 1) * 30 + 15 + inner_offset) % 360)
         ax.text(theta, 5.5, "-".join(governors), ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#3B82F6", ec="none", alpha=0.95), zorder=7)
         ax.annotate('', xy=(theta + np.radians(13.5), 5.5), xytext=(theta + np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
         ax.annotate('', xy=(theta - np.radians(13.5), 5.5), xytext=(theta - np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
@@ -415,12 +404,12 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         if not ring1_rashi_filled[r]:
             lord = RASHI_LORDS[r]
             ring1_where_is_planet.setdefault(lord, {"degrees": set(), "rashis": set()})["rashis"].add(r)
-            theta = np.radians(((r - 1) * 30 + 15) % 360)
+            theta = np.radians(((r - 1) * 30 + 15 + inner_offset) % 360)
             ax.text(theta, 5.5, lord, ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#3B82F6", ec="none", alpha=0.95), zorder=7)
             ax.annotate('', xy=(theta + np.radians(13.5), 5.5), xytext=(theta + np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
             ax.annotate('', xy=(theta - np.radians(13.5), 5.5), xytext=(theta - np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
 
-    # --- TRUE SIDEREAL: RING 2 - Sub Lords ---
+    # --- RESTORED: RING 2 - Sub Lords ---
     ring2_plots_radial = {}
     ring2_governors = {r: [] for r in empty_rashis}
     ring2_rashi_filled = {r: False for r in range(1, 13)}
@@ -434,7 +423,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
 
     used_positions_ring2 = []
     for target_deg, visitors in ring2_plots_radial.items():
-        shifted_deg = target_deg
+        shifted_deg = (target_deg + inner_offset) % 360
         theta = np.radians(shifted_deg)
         if visitors: ring2_rashi_filled[(target_deg // 30) + 1] = True
         for visitor in visitors:
@@ -447,23 +436,23 @@ def draw_circular_horoscope(year, month, day, hour, minute):
     for rashi_idx, governors in ring2_governors.items():
         if not governors: continue
         ring2_rashi_filled[rashi_idx] = True
-        theta = np.radians(((rashi_idx - 1) * 30 + 15) % 360)
+        theta = np.radians(((rashi_idx - 1) * 30 + 15 + inner_offset) % 360)
         ax.text(theta, 8.5, "-".join(governors), ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#EF4444", ec="none", alpha=0.95), zorder=7)
         ax.annotate('', xy=(theta + np.radians(13.5), 8.5), xytext=(theta + np.radians(7), 8.5), arrowprops=dict(arrowstyle="-|>", color='#F87171', lw=2, mutation_scale=12), zorder=6)
         ax.annotate('', xy=(theta - np.radians(13.5), 8.5), xytext=(theta - np.radians(7), 8.5), arrowprops=dict(arrowstyle="-|>", color='#F87171', lw=2, mutation_scale=12), zorder=6)
 
     for r in range(1, 13):
         if not ring2_rashi_filled[r]:
-            t_start = np.radians((r - 1) * 30)
-            t_end = np.radians(r * 30)
+            t_start = np.radians(((r - 1) * 30 + inner_offset) % 360)
+            t_end = np.radians((r * 30 + inner_offset) % 360)
             ax.plot([t_start, t_end], [7, 10], color='#EF4444', lw=2, alpha=0.4, zorder=3)
             ax.plot([t_start, t_end], [10, 7], color='#EF4444', lw=2, alpha=0.4, zorder=3)
 
-    # --- Draw Time Markers (Tracking across the Sidereal Sky) ---
+    # --- Draw Time Markers ---
     for t_str, l_val in time_markers:
-        theta = np.radians(l_val)
+        theta = np.radians((l_val + inner_offset) % 360)
         ax.plot([theta, theta], [10, 14], color='gray', lw=1.5, linestyle=':', zorder=4)
-        rot_deg = l_val
+        rot_deg = (l_val + inner_offset) % 360
         if 90 < rot_deg <= 270: rot_deg += 180
         
         is_current = (t_str == f"{hour:02d}:{minute:02d}")
@@ -473,9 +462,9 @@ def draw_circular_horoscope(year, month, day, hour, minute):
 
     # --- Draw Minute-by-Minute Moon Transition Text ---
     for l_val, transition_text in moon_transitions:
-        theta = np.radians(l_val)
+        theta = np.radians((l_val + inner_offset) % 360)
         ax.plot([theta, theta], [10, 14], color='#F59E0B', lw=2, linestyle='--', zorder=4)
-        rot_deg = l_val
+        rot_deg = (l_val + inner_offset) % 360
         if 90 < rot_deg <= 270: rot_deg += 180
         ax.text(theta, 13.6, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=8, fontweight='bold', color='#111827', bbox=dict(boxstyle="square,pad=0.1", fc="#F59E0B", ec="none", alpha=0.9), zorder=5)
 
@@ -530,8 +519,8 @@ tithi_banner_placeholder.markdown(
 col_left, col_right = st.columns([6, 4], gap="large")
 
 with col_left:
-    st.subheader(f"Astrolabe Mapping at {selected_time.strftime('%H:%M')}")
-    with st.spinner("Calculating Ephemeris..."):
+    st.subheader(f"Astrolabe Rotation at {selected_time.strftime('%H:%M')}")
+    with st.spinner("Calculating rotation..."):
         fig = draw_circular_horoscope(
             selected_date.year, selected_date.month, selected_date.day, 
             selected_time.hour, selected_time.minute
