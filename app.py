@@ -503,4 +503,107 @@ with ctrl_col1:
 with ctrl_col2:
     with st.spinner("Pre-calculating Nakshatra filters..."):
         nifty_trend_html, sector_trend_htmls = generate_all_trends_html(selected_date.year, selected_date.month, selected_date.day)
-        st.markdown(nifty_trend_html, unsafe_allow_
+        st.markdown(nifty_trend_html, unsafe_allow_html=True)
+    
+    selected_time = st.slider(
+        "⏳ Slide to Rotate Time",
+        min_value=time(9, 15),
+        max_value=time(15, 30),
+        value=st.session_state.time_slider,
+        step=timedelta(minutes=5),
+        format="HH:mm",
+        key="time_slider",
+        label_visibility="collapsed"
+    )
+
+st.divider()
+
+tithi_message = get_tithi_info(selected_date.year, selected_date.month, selected_date.day, 9, 15)
+tithi_banner_placeholder.markdown(
+    f"<div style='padding: 10px; border-radius: 5px; background-color: #2D3748; text-align: center; border: 1px solid #4A5568; margin-bottom: 20px;'>"
+    f"<h4 style='color: #E2E8F0; margin: 0;'>🌌 Daily Cosmic Environment: {tithi_message}</h4>"
+    f"</div>", 
+    unsafe_allow_html=True
+)
+
+col_left, col_right = st.columns([6, 4], gap="large")
+
+with col_left:
+    st.subheader(f"Astrolabe Mapping at {selected_time.strftime('%H:%M')}")
+    with st.spinner("Calculating Ephemeris..."):
+        fig = draw_circular_horoscope(
+            selected_date.year, selected_date.month, selected_date.day, 
+            selected_time.hour, selected_time.minute
+        )
+        st.pyplot(fig, use_container_width=True)
+        
+    if selected_time >= time(15, 15):
+        st.markdown("---")
+        st.markdown("### 🌙 BTST Astro-Gap Predictor (15:15 Trigger)")
+        jd_close = get_jd(selected_date.year, selected_date.month, selected_date.day, 15, 15)
+        moon_close = swe.calc_ut(jd_close, swe.MOON)[0][0]
+        sun_close = swe.calc_ut(jd_close, swe.SUN)[0][0]
+        
+        if moon_close > sun_close:
+            st.success("**GAP UP EXPECTED**\nThe Moon's longitudinal dominance over the Sun at market close favors positive overnight sentiment.")
+        else:
+            st.error("**GAP DOWN EXPECTED**\nThe Sun's dominance over the Moon at market close suggests overnight pressure / Gap Down.")
+
+with col_right:
+    df_sectors, planet_positions, current_lagna = calculate_sector_scores(
+        selected_date.year, selected_date.month, selected_date.day, 
+        selected_time.hour, selected_time.minute
+    )
+    
+    st.subheader("Intraday Live Scoring")
+    
+    malefics = ["SA", "MA", "RA"]
+    warnings = []
+    for m in malefics:
+        dist = ang_dist(current_lagna, planet_positions[m]["deg"])
+        if abs(dist - 150) < 3 or abs(dist - 210) < 3:
+            warnings.append(f"⚠️ **6/8 Shadastak Alert:** Lagna is severely afflicted by {m}. High risk of sudden intraday reversal or heavy profit booking right now.")
+        elif abs(dist - 90) < 3:
+            warnings.append(f"⚠️ **4/10 Square Alert:** Lagna is squaring {m}. Expect friction and sudden volatility spikes.")
+            
+    if warnings:
+        for w in warnings:
+            st.warning(w)
+            
+    banking_score = df_sectors[df_sectors["Sector"] == "Banking / Financials"].iloc[0]["Score"]
+    it_score = df_sectors[df_sectors["Sector"] == "IT"].iloc[0]["Score"]
+    energy_score = df_sectors[df_sectors["Sector"] == "Energy"].iloc[0]["Score"]
+    fmcg_score = df_sectors[df_sectors["Sector"] == "FMCG"].iloc[0]["Score"]
+    
+    nifty_total = (banking_score * 3) + (it_score * 2) + energy_score + fmcg_score
+    
+    st.markdown("### NIFTY 50 Directional Bias (True Strength)")
+    if nifty_total >= 6:
+        st.success(f"📈 **POWERFUL BULLISH (+)**\n\nNIFTY True Score: **{nifty_total}**\n\nHeavyweights AND their Star Lords are aligned in positive zones.")
+    elif nifty_total <= -6:
+        st.error(f"📉 **POWERFUL BEARISH (-)**\n\nNIFTY True Score: **{nifty_total}**\n\nHeavyweights AND their Star Lords are aligned in disposal zones.")
+    elif nifty_total > 0:
+        st.info(f"↗️ **SLIGHT BULLISH / SIDEWAYS**\n\nNIFTY True Score: **{nifty_total}**\n\nMixed Star Lord support. Watch technical breakouts.")
+    elif nifty_total < 0:
+        st.warning(f"↘️ **SLIGHT BEARISH / SIDEWAYS**\n\nNIFTY True Score: **{nifty_total}**\n\nMixed Star Lord support. Watch technical breakdowns.")
+    else:
+        st.warning(f"⚖️ **CHOPPY / NEUTRAL**\n\nNIFTY True Score: **0**\n\nPlanets and Star Lords are completely contradicting each other. Avoid Index trading.")
+    
+    st.divider()
+    
+    st.markdown("### Individual Sector True Scores")
+    st.caption("Score incorporates Planet Zone + Nakshatra Lord Zone. ±2 required for strong conviction.")
+    
+    grid_cols = st.columns(2)
+    for index, row in df_sectors.iterrows():
+        col = grid_cols[index % 2]
+        sector_name = row['Sector']
+        with col:
+            st.markdown(
+                f"<div style='padding: 10px; border-radius: 5px; background-color: #1f2937; margin-bottom: 10px; border-left: 5px solid {row['Color']}'>"
+                f"<strong style='color: white; font-size: 16px;'>{sector_name}</strong><br>"
+                f"<span style='color: {row['Color']}; font-weight: bold;'>True Score: {row['Score']:+d} ({row['Sentiment']})</span>"
+                f"{sector_trend_htmls[sector_name]}"
+                f"</div>", 
+                unsafe_allow_html=True
+            )
