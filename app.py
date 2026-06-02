@@ -6,6 +6,9 @@ import math
 import pandas as pd
 from datetime import date, datetime, timedelta, timezone, time
 
+# --- THIS MUST BE THE FIRST STREAMLIT COMMAND ---
+st.set_page_config(layout="wide", page_title="Astrolabe Explorer")
+
 # --- 1. PASSWORD PROTECTION GATE ---
 def check_password():
     """Returns `True` if the user had the correct password."""
@@ -106,7 +109,6 @@ def get_lagna(year, month, day, hour, minute):
     return int(math.floor(ascmc[0] + 0.5)) % 360
 
 def get_moon_nl_sl(year, month, day, hour, minute):
-    """Calculates Moon's exact Nakshatra and Sublord at a given minute"""
     jd = get_jd(year, month, day, hour, minute)
     swe.set_sid_mode(swe.SIDM_LAHIRI)
     pos, _ = swe.calc_ut(jd, swe.MOON, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
@@ -261,7 +263,6 @@ def draw_circular_horoscope(year, month, day, hour, minute):
     planet_positions = get_planetary_positions(year, month, day, hour, minute)
     inner_offset = 30 - current_lagna
 
-    # Calculate exactly where the time markers fall
     time_markers = []
     start_t = datetime(year, month, day, 9, 15)
     end_t = datetime(year, month, day, 15, 30)
@@ -271,7 +272,6 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         time_markers.append((curr_t.strftime("%H:%M"), l_val))
         curr_t += timedelta(minutes=15)
         
-    # --- RESTORED: Minute-by-Minute Moon Transition Tracker ---
     moon_transitions = []
     curr_m = start_t
     prev_nl, prev_sl = get_moon_nl_sl(year, month, day, curr_m.hour, curr_m.minute)
@@ -286,7 +286,6 @@ def draw_circular_horoscope(year, month, day, hour, minute):
             moon_transitions.append((l_val, f"{curr_nl}-{curr_sl}"))
             prev_nl, prev_sl = curr_nl, curr_sl
         curr_m += timedelta(minutes=1)
-    # -----------------------------------------------------------
 
     fig = plt.figure(figsize=(16, 16), dpi=150) 
     fig.patch.set_facecolor('#0e1117') 
@@ -352,6 +351,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         used_positions_inner.append((shifted_deg, radius))
         ax.text(theta, radius, planet, ha='center', va='center', fontsize=9, fontweight='bold', color='black', bbox=dict(boxstyle="circle,pad=0.2", fc="#E2E8F0", ec="none", alpha=1.0), zorder=6)
 
+    # --- RING 1: Nakshatra Lords ---
     ring1_plots = {p: [] for p in planet_positions.keys()}
     for planet, data in planet_positions.items():
         nl = data["nl"]
@@ -383,14 +383,72 @@ def draw_circular_horoscope(year, month, day, hour, minute):
             used_positions_ring1.append((shifted_deg, radius))
             ax.text(theta, radius, visitor, ha='center', va='center', fontsize=7, fontweight='bold', color='#111827', bbox=dict(boxstyle="round,pad=0.1", fc="#93C5FD", ec="white", lw=0.5, alpha=0.9), zorder=6)
 
+    rashi_governors = {r: [] for r in empty_rashis}
+    for planet, data in planet_positions.items():
+        nl = data["nl"]
+        effective_lord = RASHI_LORDS[(planet_positions[nl]["deg"] // 30) + 1] if nl in ["RA", "KE"] else nl
+        for r_owned in LORD_TO_RASHIS.get(effective_lord, []):
+            if r_owned in empty_rashis and planet not in rashi_governors[r_owned]:
+                rashi_governors[r_owned].append(planet)
+
+    for rashi_idx, governors in rashi_governors.items():
+        if not governors: continue
+        ring1_rashi_filled[rashi_idx] = True
+        for g in governors: ring1_where_is_planet[g]["rashis"].add(rashi_idx) 
+        theta = np.radians(((rashi_idx - 1) * 30 + 15 + inner_offset) % 360)
+        ax.text(theta, 5.5, "-".join(governors), ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#3B82F6", ec="none", alpha=0.95), zorder=7)
+        ax.annotate('', xy=(theta + np.radians(13.5), 5.5), xytext=(theta + np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
+        ax.annotate('', xy=(theta - np.radians(13.5), 5.5), xytext=(theta - np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
+
     for r in range(1, 13):
         if not ring1_rashi_filled[r]:
             lord = RASHI_LORDS[r]
             ring1_where_is_planet.setdefault(lord, {"degrees": set(), "rashis": set()})["rashis"].add(r)
             theta = np.radians(((r - 1) * 30 + 15 + inner_offset) % 360)
             ax.text(theta, 5.5, lord, ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#3B82F6", ec="none", alpha=0.95), zorder=7)
+            ax.annotate('', xy=(theta + np.radians(13.5), 5.5), xytext=(theta + np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
+            ax.annotate('', xy=(theta - np.radians(13.5), 5.5), xytext=(theta - np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
 
-    # Drawing static 15 min time markers
+    # --- RESTORED: RING 2 - Sub Lords ---
+    ring2_plots_radial = {}
+    ring2_governors = {r: [] for r in empty_rashis}
+    ring2_rashi_filled = {r: False for r in range(1, 13)}
+
+    for planet, data in planet_positions.items():
+        sl = data["sl"]
+        if sl in ring1_where_is_planet:
+            for deg in ring1_where_is_planet[sl]["degrees"]: ring2_plots_radial.setdefault(deg, []).append(planet)
+            for r_idx in ring1_where_is_planet[sl]["rashis"]:
+                if planet not in ring2_governors[r_idx]: ring2_governors[r_idx].append(planet)
+
+    used_positions_ring2 = []
+    for target_deg, visitors in ring2_plots_radial.items():
+        shifted_deg = (target_deg + inner_offset) % 360
+        theta = np.radians(shifted_deg)
+        if visitors: ring2_rashi_filled[(target_deg // 30) + 1] = True
+        for visitor in visitors:
+            radius = 7.3 
+            while any(ang_dist(shifted_deg, p_deg) < 3.5 and abs(radius - p_rad) < 0.45 for p_deg, p_rad in used_positions_ring2):
+                radius += 0.45 
+            used_positions_ring2.append((shifted_deg, radius))
+            ax.text(theta, radius, visitor, ha='center', va='center', fontsize=7, fontweight='bold', color='#111827', bbox=dict(boxstyle="round,pad=0.1", fc="#FCA5A5", ec="white", lw=0.5, alpha=0.9), zorder=6)
+
+    for rashi_idx, governors in ring2_governors.items():
+        if not governors: continue
+        ring2_rashi_filled[rashi_idx] = True
+        theta = np.radians(((rashi_idx - 1) * 30 + 15 + inner_offset) % 360)
+        ax.text(theta, 8.5, "-".join(governors), ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#EF4444", ec="none", alpha=0.95), zorder=7)
+        ax.annotate('', xy=(theta + np.radians(13.5), 8.5), xytext=(theta + np.radians(7), 8.5), arrowprops=dict(arrowstyle="-|>", color='#F87171', lw=2, mutation_scale=12), zorder=6)
+        ax.annotate('', xy=(theta - np.radians(13.5), 8.5), xytext=(theta - np.radians(7), 8.5), arrowprops=dict(arrowstyle="-|>", color='#F87171', lw=2, mutation_scale=12), zorder=6)
+
+    for r in range(1, 13):
+        if not ring2_rashi_filled[r]:
+            t_start = np.radians(((r - 1) * 30 + inner_offset) % 360)
+            t_end = np.radians((r * 30 + inner_offset) % 360)
+            ax.plot([t_start, t_end], [7, 10], color='#EF4444', lw=2, alpha=0.4, zorder=3)
+            ax.plot([t_start, t_end], [10, 7], color='#EF4444', lw=2, alpha=0.4, zorder=3)
+
+    # --- Draw Time Markers ---
     for t_str, l_val in time_markers:
         theta = np.radians((l_val + inner_offset) % 360)
         ax.plot([theta, theta], [10, 14], color='gray', lw=1.5, linestyle=':', zorder=4)
@@ -402,14 +460,13 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         color = '#00CC96' if is_current else 'gray'
         ax.text(theta, 13.0, f"L-{t_str}", ha='center', va='center', rotation=rot_deg, fontsize=f_size, fontweight='bold', color=color, bbox=dict(boxstyle="round,pad=0.15", fc="#1f2937", ec="none", alpha=0.9), zorder=5)
 
-    # --- RESTORED: Drawing Moon Transition Text ---
+    # --- Draw Minute-by-Minute Moon Transition Text ---
     for l_val, transition_text in moon_transitions:
         theta = np.radians((l_val + inner_offset) % 360)
         ax.plot([theta, theta], [10, 14], color='#F59E0B', lw=2, linestyle='--', zorder=4)
         rot_deg = (l_val + inner_offset) % 360
         if 90 < rot_deg <= 270: rot_deg += 180
         ax.text(theta, 13.6, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=8, fontweight='bold', color='#111827', bbox=dict(boxstyle="square,pad=0.1", fc="#F59E0B", ec="none", alpha=0.9), zorder=5)
-    # ----------------------------------------------
 
     plt.tight_layout()
     return fig
@@ -417,8 +474,6 @@ def draw_circular_horoscope(year, month, day, hour, minute):
 # ==========================================
 # STREAMLIT UI (LAYOUT & DASHBOARD)
 # ==========================================
-st.set_page_config(layout="wide", page_title="Astrolabe Explorer")
-
 default_date, default_time = get_current_ist_rounded()
 
 if "time_slider" not in st.session_state:
