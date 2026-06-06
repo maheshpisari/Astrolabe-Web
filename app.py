@@ -556,7 +556,7 @@ with col_right:
         elif ZONE_SCORES[zone_idx] == -1:
             bearish_planets.append(p_name)
             
-    st.markdown("### Planet House Seating")
+    st.markdown("### Planetory position")
     st.markdown(
         f"| 🟢 BULLISH ({len(bullish_planets)}) | 🔴 BEARISH ({len(bearish_planets)}) |\n"
         f"| :--- | :--- |\n"
