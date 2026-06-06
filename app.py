@@ -60,6 +60,11 @@ SECTORS = {
 
 ZONE_SCORES = [1, 1, -1, 1, 0, -1, 1, -1, 1, -1, 1, -1]
 
+# KP Ayanamsha Helper
+def set_ayanamsha():
+    swe.set_sid_mode(swe.SIDM_KRISHNAMURTI)
+
+
 # ==========================================
 # CORE CALCULATION FUNCTIONS
 # ==========================================
@@ -102,19 +107,19 @@ def get_nl_sl(longitude):
 
 def get_lagna(year, month, day, hour, minute):
     jd = get_jd(year, month, day, hour, minute)
-    swe.set_sid_mode(swe.SIDM_LAHIRI)
+    swe.set_sid_mode(swe.SIDM_KRISHNAMURTI)
     cusps, ascmc = swe.houses_ex(jd, 19.0601, 72.8601, b'P', swe.FLG_SIDEREAL)
     return int(math.floor(ascmc[0] + 0.5)) % 360
 
 def get_moon_nl_sl(year, month, day, hour, minute):
     jd = get_jd(year, month, day, hour, minute)
-    swe.set_sid_mode(swe.SIDM_LAHIRI)
+    swe.set_sid_mode(swe.SIDM_KRISHNAMURTI)
     pos, _ = swe.calc_ut(jd, swe.MOON, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
     return get_nl_sl(pos[0])
 
 def get_planetary_positions(year, month, day, hour, minute):
     jd = get_jd(year, month, day, hour, minute)
-    swe.set_sid_mode(swe.SIDM_LAHIRI)
+    swe.set_sid_mode(swe.SIDM_KRISHNAMURTI)
     
     planets = {
         "SU": swe.SUN, "MO": swe.MOON, "MA": swe.MARS, "ME": swe.MERCURY, 
@@ -135,7 +140,7 @@ def get_planetary_positions(year, month, day, hour, minute):
 
 def get_tithi_info(year, month, day, hour=9, minute=15):
     jd = get_jd(year, month, day, hour, minute)
-    swe.set_sid_mode(swe.SIDM_LAHIRI)
+    swe.set_sid_mode(swe.SIDM_KRISHNAMURTI)
     sun_pos, _ = swe.calc_ut(jd, swe.SUN, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
     moon_pos, _ = swe.calc_ut(jd, swe.MOON, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
     
