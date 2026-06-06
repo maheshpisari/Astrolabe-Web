@@ -103,7 +103,7 @@ def get_nl_sl(longitude):
 def get_lagna(year, month, day, hour, minute):
     jd = get_jd(year, month, day, hour, minute)
     swe.set_sid_mode(swe.SIDM_LAHIRI)
-    cusps, ascmc = swe.houses_ex(jd, 19.0601, 72.8601, b'P', swe.FLG_SIDEREAL)
+    cusps, ascmc = swe.houses_ex(jd, 12.9716, 77.5946, b'P', swe.FLG_SIDEREAL)
     return int(math.floor(ascmc[0] + 0.5)) % 360
 
 def get_moon_nl_sl(year, month, day, hour, minute):
@@ -262,8 +262,8 @@ def draw_circular_horoscope(year, month, day, hour, minute):
     inner_offset = 30 - current_lagna
 
     time_markers = []
-    start_t = datetime(year, month, day, 0, 0)
-    end_t = datetime(year, month, day, 23, 59)
+    start_t = datetime(year, month, day, 9, 15)
+    end_t = datetime(year, month, day, 15, 30)
     curr_t = start_t
     while curr_t <= end_t:
         l_val = get_lagna(year, month, day, curr_t.hour, curr_t.minute)
@@ -293,6 +293,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
     ax.set_theta_direction(1)       
     ax.axis('off')
     
+    # Expand boundaries slightly to ensure the new outer numbers fit nicely
     ax.set_rmax(16.5)
 
     theta_circle = np.linspace(0, 2 * np.pi, 500)
@@ -308,12 +309,17 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         (300, "+ve big lots buying", "#00CC96"), (330, "-ve heavily -ve", "#EF553B")
     ]
 
+    # --- Outer Labels (Fixed on screen) ---
     for angle in range(0, 360, 30):
         theta = np.radians(angle)
         ax.plot([theta, theta], [10, 14], color='white', lw=1.5, zorder=2)
+        # Degree Text
         ax.text(theta, 14.5, f"{angle}°", ha='center', va='center', fontsize=14, fontweight='bold', color='white')
+        
+        # --- NEW: Fixed Market Zone Numbers (1 to 12) at outer edge ---
         ax.text(np.radians(angle + 15), 15.5, str((angle // 30) + 1), ha='center', va='center', fontsize=22, fontweight='bold', color='white')
 
+    # --- Market Zone Text ---
     for start_deg, text, color in market_zones:
         center_deg = start_deg + 15
         theta = np.radians(center_deg)
@@ -333,15 +339,18 @@ def draw_circular_horoscope(year, month, day, hour, minute):
             empty_rashis.append(rashi_idx) 
             ax.fill_between(np.radians(np.linspace(start_angle + inner_offset, end_angle + inner_offset, 50)), 0, 4, color='#1f2937', alpha=0.6, zorder=1)
 
+    # --- Inner Rotating Grid & Numbers ---
     for angle in range(0, 360, 5):
         theta = np.radians(angle + inner_offset)
         if angle % 30 == 0:
             ax.plot([theta, theta], [0, 10], color='white', lw=2, zorder=2)
+            # --- MOVED: Rashi Numbers (1 to 12) placed in innermost circle (radius 2.0) ---
             ax.text(np.radians(angle + 15 + inner_offset), 2.0, str((angle // 30) + 1), ha='center', va='center', fontsize=22, fontweight='bold', color='white', zorder=2)
         else:
             ax.plot([theta, theta], [0, 10], color='gray', lw=1, linestyle='--', zorder=2)
             ax.text(theta, 9.4, str(angle % 30), ha='center', va='center', fontsize=9, color='#AB63FA', fontweight='bold')
 
+    # --- Plot Planets ---
     used_positions_inner = []
     for planet, data in planet_positions.items():
         shifted_deg = (data["deg"] + inner_offset) % 360
@@ -352,6 +361,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         used_positions_inner.append((shifted_deg, radius))
         ax.text(theta, radius, planet, ha='center', va='center', fontsize=9, fontweight='bold', color='black', bbox=dict(boxstyle="circle,pad=0.2", fc="#E2E8F0", ec="none", alpha=1.0), zorder=6)
 
+    # --- RING 1 - Nakshatra Lords ---
     ring1_plots = {p: [] for p in planet_positions.keys()}
     for planet, data in planet_positions.items():
         nl = data["nl"]
@@ -409,6 +419,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
             ax.annotate('', xy=(theta + np.radians(13.5), 5.5), xytext=(theta + np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
             ax.annotate('', xy=(theta - np.radians(13.5), 5.5), xytext=(theta - np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
 
+    # --- RING 2 - Sub Lords ---
     ring2_plots_radial = {}
     ring2_governors = {r: [] for r in empty_rashis}
     ring2_rashi_filled = {r: False for r in range(1, 13)}
@@ -447,6 +458,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
             ax.plot([t_start, t_end], [7, 10], color='#EF4444', lw=2, alpha=0.4, zorder=3)
             ax.plot([t_start, t_end], [10, 7], color='#EF4444', lw=2, alpha=0.4, zorder=3)
 
+    # --- Draw Time Markers ---
     for t_str, l_val in time_markers:
         theta = np.radians((l_val + inner_offset) % 360)
         ax.plot([theta, theta], [10, 14], color='gray', lw=1.5, linestyle=':', zorder=4)
@@ -454,16 +466,17 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         if 90 < rot_deg <= 270: rot_deg += 180
         
         is_current = (t_str == f"{hour:02d}:{minute:02d}")
-        f_size = 9 if is_current else 5 
+        f_size = 9 if is_current else 6
         color = '#00CC96' if is_current else 'gray'
         ax.text(theta, 13.0, f"L-{t_str}", ha='center', va='center', rotation=rot_deg, fontsize=f_size, fontweight='bold', color=color, bbox=dict(boxstyle="round,pad=0.15", fc="#1f2937", ec="none", alpha=0.9), zorder=5)
 
+    # --- Draw Minute-by-Minute Moon Transition Text ---
     for l_val, transition_text in moon_transitions:
         theta = np.radians((l_val + inner_offset) % 360)
         ax.plot([theta, theta], [10, 14], color='#F59E0B', lw=2, linestyle='--', zorder=4)
         rot_deg = (l_val + inner_offset) % 360
         if 90 < rot_deg <= 270: rot_deg += 180
-        ax.text(theta, 13.6, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=7, fontweight='bold', color='#111827', bbox=dict(boxstyle="square,pad=0.1", fc="#F59E0B", ec="none", alpha=0.9), zorder=5)
+        ax.text(theta, 13.6, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=8, fontweight='bold', color='#111827', bbox=dict(boxstyle="square,pad=0.1", fc="#F59E0B", ec="none", alpha=0.9), zorder=5)
 
     plt.tight_layout()
     return fig
@@ -541,29 +554,6 @@ with col_right:
         selected_date.year, selected_date.month, selected_date.day, 
         selected_time.hour, selected_time.minute
     )
-    
-    # --- NEW: Bullish vs Bearish Planet Seating Table ---
-    bullish_planets = []
-    bearish_planets = []
-    inner_offset = 30 - current_lagna
-    
-    for p_name, data in planet_positions.items():
-        shifted_deg = (data["deg"] + inner_offset) % 360
-        zone_idx = int(shifted_deg // 30)
-        
-        if ZONE_SCORES[zone_idx] == 1:
-            bullish_planets.append(p_name)
-        elif ZONE_SCORES[zone_idx] == -1:
-            bearish_planets.append(p_name)
-            
-    st.markdown("### Planetary  position")
-    st.markdown(
-        f"| 🟢 BULLISH ({len(bullish_planets)}) | 🔴 BEARISH ({len(bearish_planets)}) |\n"
-        f"| :--- | :--- |\n"
-        f"| **{', '.join(bullish_planets) if bullish_planets else '-'}** | **{', '.join(bearish_planets) if bearish_planets else '-'}** |"
-    )
-    st.markdown("<br>", unsafe_allow_html=True)
-    # ----------------------------------------------------
     
     st.subheader("Intraday Live Scoring")
     
