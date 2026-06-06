@@ -103,7 +103,7 @@ def get_nl_sl(longitude):
 def get_lagna(year, month, day, hour, minute):
     jd = get_jd(year, month, day, hour, minute)
     swe.set_sid_mode(swe.SIDM_LAHIRI)
-    cusps, ascmc = swe.houses_ex(jd, 12.9716, 77.5946, b'P', swe.FLG_SIDEREAL)
+    cusps, ascmc = swe.houses_ex(jd, 19.0601, 72.8601, b'P', swe.FLG_SIDEREAL)
     return int(math.floor(ascmc[0] + 0.5)) % 360
 
 def get_moon_nl_sl(year, month, day, hour, minute):
