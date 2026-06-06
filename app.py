@@ -205,6 +205,30 @@ def calculate_sector_scores(year, month, day, hour, minute):
         
     return pd.DataFrame(sector_results), planets, lagna
 
+
+# ==========================================
+# BULLISH / BEARISH PLANET TABLE
+# ==========================================
+def get_bullish_bearish_planets(year, month, day, hour, minute):
+    lagna = get_lagna(year, month, day, hour, minute)
+    planets = get_planetary_positions(year, month, day, hour, minute)
+    inner_offset = 30 - lagna
+
+    bullish = []
+    bearish = []
+
+    for p_name, data in planets.items():
+        shifted_deg = (data["deg"] + inner_offset) % 360
+        zone_idx = int(shifted_deg // 30)
+        zone_score = ZONE_SCORES[zone_idx]
+
+        if zone_score > 0:
+            bullish.append(p_name)
+        elif zone_score < 0:
+            bearish.append(p_name)
+
+    return bullish, bearish
+
 # ==========================================
 # PRE-CALCULATED DAILY TIMELINES (CACHED)
 # ==========================================
@@ -560,6 +584,20 @@ with col_right:
         selected_time.hour, selected_time.minute
     )
     
+
+    bullish_planets, bearish_planets = get_bullish_bearish_planets(
+        selected_date.year, selected_date.month, selected_date.day,
+        selected_time.hour, selected_time.minute
+    )
+
+    bb_df = pd.DataFrame({
+        f"BULLISH ({len(bullish_planets)})": [", ".join(bullish_planets) if bullish_planets else "-"],
+        f"BEARISH ({len(bearish_planets)})": [", ".join(bearish_planets) if bearish_planets else "-"]
+    })
+
+    st.markdown("### Planet Position Summary")
+    st.table(bb_df)
+
     st.subheader("Intraday Live Scoring")
     
     malefics = ["SA", "MA", "RA"]
