@@ -11,7 +11,6 @@ st.set_page_config(layout="wide", page_title="Astrolabe Explorer")
 
 # --- 1. PASSWORD PROTECTION GATE ---
 def check_password():
-    """Returns `True` if the user had the correct password."""
     if st.session_state.get("password_correct", False):
         return True
 
@@ -29,6 +28,28 @@ def check_password():
 
 if not check_password():
     st.stop()
+
+# ==========================================
+# EXCHANGES CONFIGURATION (New Requirement)
+# ==========================================
+EXCHANGES = {
+    "National Stock Exchange (India)": {
+        "lat": 19.0601, "lon": 72.8601, "tz": 5.5, 
+        "open": time(9, 15), "close": time(15, 30), "ticker": "NIFTY 50"
+    },
+    "New York Stock Exchange (US)": {
+        "lat": 40.7128, "lon": -74.0060, "tz": -4.0, # Eastern Time approx
+        "open": time(9, 30), "close": time(16, 0), "ticker": "NYSE"
+    },
+    "Nasdaq (US)": {
+        "lat": 40.7128, "lon": -74.0060, "tz": -4.0, 
+        "open": time(9, 30), "close": time(16, 0), "ticker": "NASDAQ"
+    },
+    "London Stock Exchange (EU)": {
+        "lat": 51.5074, "lon": -0.1278, "tz": 1.0, # London Time approx
+        "open": time(8, 0), "close": time(16, 30), "ticker": "FTSE"
+    }
+}
 
 # ==========================================
 # ASTROLOGY CONSTANTS & MAPPINGS
@@ -60,35 +81,27 @@ SECTORS = {
 
 ZONE_SCORES = [1, 1, -1, 1, 0, -1, 1, -1, 1, -1, 1, -1]
 
-# KP Ayanamsha Helper
-def set_ayanamsha():
-    swe.set_sid_mode(swe.SIDM_KRISHNAMURTI)
-
-
 # ==========================================
-# CORE CALCULATION FUNCTIONS
+# CORE CALCULATION FUNCTIONS (Now Exchange-Aware)
 # ==========================================
-def get_current_ist_rounded():
+def get_current_local_rounded(tz_offset, open_t, close_t):
     utc_now = datetime.now(timezone.utc)
-    ist_now = utc_now + timedelta(hours=5, minutes=30)
-    minute = 5 * round(ist_now.minute / 5)
+    local_now = utc_now + timedelta(hours=tz_offset)
+    minute = 5 * round(local_now.minute / 5)
     if minute >= 60:
-        ist_now += timedelta(hours=1)
+        local_now += timedelta(hours=1)
         minute = 0
-    rounded_time = ist_now.replace(minute=minute, second=0, microsecond=0)
+    rounded_time = local_now.replace(minute=minute, second=0, microsecond=0)
     
     final_time = rounded_time.time()
-    if final_time < time(9, 15): final_time = time(9, 15)
-    if final_time > time(15, 30): final_time = time(15, 30)
+    if final_time < open_t: final_time = open_t
+    if final_time > close_t: final_time = close_t
     return rounded_time.date(), final_time
 
-def get_jd(year, month, day, hour, minute):
-    utc_hour = hour - 5
-    utc_min = minute - 30
-    if utc_min < 0:
-        utc_min += 60
-        utc_hour -= 1
-    return swe.julday(year, month, day, utc_hour + utc_min/60.0)
+def get_jd(year, month, day, hour, minute, tz_offset):
+    local_time = datetime(year, month, day, hour, minute)
+    utc_time = local_time - timedelta(hours=tz_offset)
+    return swe.julday(utc_time.year, utc_time.month, utc_time.day, utc_time.hour + utc_time.minute/60.0 + utc_time.second/3600.0)
 
 def get_nl_sl(longitude):
     long_min = longitude * 60.0
@@ -105,21 +118,21 @@ def get_nl_sl(longitude):
             return nl, sl
     return nl, nl
 
-def get_lagna(year, month, day, hour, minute):
-    jd = get_jd(year, month, day, hour, minute)
-    swe.set_sid_mode(swe.SIDM_KRISHNAMURTI)
-    cusps, ascmc = swe.houses_ex(jd, 19.0601, 72.8601, b'P', swe.FLG_SIDEREAL)
+def get_lagna(year, month, day, hour, minute, lat, lon, tz_offset):
+    jd = get_jd(year, month, day, hour, minute, tz_offset)
+    swe.set_sid_mode(swe.SIDM_LAHIRI)
+    cusps, ascmc = swe.houses_ex(jd, lat, lon, b'P', swe.FLG_SIDEREAL)
     return int(math.floor(ascmc[0] + 0.5)) % 360
 
-def get_moon_nl_sl(year, month, day, hour, minute):
-    jd = get_jd(year, month, day, hour, minute)
-    swe.set_sid_mode(swe.SIDM_KRISHNAMURTI)
+def get_moon_nl_sl(year, month, day, hour, minute, tz_offset):
+    jd = get_jd(year, month, day, hour, minute, tz_offset)
+    swe.set_sid_mode(swe.SIDM_LAHIRI)
     pos, _ = swe.calc_ut(jd, swe.MOON, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
     return get_nl_sl(pos[0])
 
-def get_planetary_positions(year, month, day, hour, minute):
-    jd = get_jd(year, month, day, hour, minute)
-    swe.set_sid_mode(swe.SIDM_KRISHNAMURTI)
+def get_planetary_positions(year, month, day, hour, minute, tz_offset):
+    jd = get_jd(year, month, day, hour, minute, tz_offset)
+    swe.set_sid_mode(swe.SIDM_LAHIRI)
     
     planets = {
         "SU": swe.SUN, "MO": swe.MOON, "MA": swe.MARS, "ME": swe.MERCURY, 
@@ -138,9 +151,9 @@ def get_planetary_positions(year, month, day, hour, minute):
     positions["KE"] = {"deg": int(math.floor(ke_exact_lon + 0.5)) % 360, "nl": ke_nl, "sl": ke_sl}
     return positions
 
-def get_tithi_info(year, month, day, hour=9, minute=15):
-    jd = get_jd(year, month, day, hour, minute)
-    swe.set_sid_mode(swe.SIDM_KRISHNAMURTI)
+def get_tithi_info(year, month, day, hour, minute, tz_offset):
+    jd = get_jd(year, month, day, hour, minute, tz_offset)
+    swe.set_sid_mode(swe.SIDM_LAHIRI)
     sun_pos, _ = swe.calc_ut(jd, swe.SUN, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
     moon_pos, _ = swe.calc_ut(jd, swe.MOON, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
     
@@ -148,30 +161,24 @@ def get_tithi_info(year, month, day, hour=9, minute=15):
     tithi_num = math.floor(diff / 12) + 1
     
     t_type = tithi_num % 5
-    if t_type == 1:
-        return f"Tithi {tithi_num} (Nanda) - 📈 Trending Day Likely. Ride the momentum."
-    elif t_type == 2:
-        return f"Tithi {tithi_num} (Bhadra) - ⚖️ Steady/Balanced Day. Respect technical levels."
-    elif t_type == 3:
-        return f"Tithi {tithi_num} (Jaya) - 🚀 Victory/Bullish Bias. Look for breakout longs."
-    elif t_type == 4:
-        return f"Tithi {tithi_num} (Rikta) - ⚠️ 'Empty' Hands. High Risk of SL Hunting & Volatility."
-    else: 
-        return f"Tithi {tithi_num} (Purna) - 🔄 Reversal Day. Watch for major market turning points."
+    if t_type == 1: return f"Tithi {tithi_num} (Nanda) - 📈 Trending Day Likely. Ride the momentum."
+    elif t_type == 2: return f"Tithi {tithi_num} (Bhadra) - ⚖️ Steady/Balanced Day. Respect technical levels."
+    elif t_type == 3: return f"Tithi {tithi_num} (Jaya) - 🚀 Victory/Bullish Bias. Look for breakout longs."
+    elif t_type == 4: return f"Tithi {tithi_num} (Rikta) - ⚠️ 'Empty' Hands. High Risk of SL Hunting & Volatility."
+    else: return f"Tithi {tithi_num} (Purna) - 🔄 Reversal Day. Watch for major market turning points."
 
 def ang_dist(d1, d2):
     return min(abs(d1 - d2), 360 - abs(d1 - d2))
 
 # ==========================================
-# ADVANCED SECTOR SCORING (NAKSHATRA FILTER)
+# ADVANCED SECTOR SCORING
 # ==========================================
-def calculate_sector_scores(year, month, day, hour, minute):
-    lagna = get_lagna(year, month, day, hour, minute)
-    planets = get_planetary_positions(year, month, day, hour, minute)
+def calculate_sector_scores(year, month, day, hour, minute, lat, lon, tz_offset):
+    lagna = get_lagna(year, month, day, hour, minute, lat, lon, tz_offset)
+    planets = get_planetary_positions(year, month, day, hour, minute, tz_offset)
     inner_offset = 30 - lagna
     
     planet_true_scores = {}
-    
     for p_name, data in planets.items():
         shifted_deg = (data["deg"] + inner_offset) % 360
         planet_zone_score = ZONE_SCORES[int(shifted_deg // 30)]
@@ -186,63 +193,28 @@ def calculate_sector_scores(year, month, day, hour, minute):
     for sector, governing_planets in SECTORS.items():
         score = sum([planet_true_scores[p] for p in governing_planets])
         
-        if score >= 2:
-            sentiment = "Strong Buy"
-            color = "#00CC96" 
-        elif score <= -2:
-            sentiment = "Strong Sell"
-            color = "#EF553B" 
-        else:
-            sentiment = "Choppy / Wait"
-            color = "#888888" 
+        if score >= 2: sentiment, color = "Strong Buy", "#00CC96" 
+        elif score <= -2: sentiment, color = "Strong Sell", "#EF553B" 
+        else: sentiment, color = "Choppy / Wait", "#888888" 
             
-        sector_results.append({
-            "Sector": sector,
-            "Score": score,
-            "Sentiment": sentiment,
-            "Color": color
-        })
+        sector_results.append({"Sector": sector, "Score": score, "Sentiment": sentiment, "Color": color})
         
     return pd.DataFrame(sector_results), planets, lagna
-
-
-# ==========================================
-# BULLISH / BEARISH PLANET TABLE
-# ==========================================
-def get_bullish_bearish_planets(year, month, day, hour, minute):
-    lagna = get_lagna(year, month, day, hour, minute)
-    planets = get_planetary_positions(year, month, day, hour, minute)
-    inner_offset = 30 - lagna
-
-    bullish = []
-    bearish = []
-
-    for p_name, data in planets.items():
-        shifted_deg = (data["deg"] + inner_offset) % 360
-        zone_idx = int(shifted_deg // 30)
-        zone_score = ZONE_SCORES[zone_idx]
-
-        if zone_score > 0:
-            bullish.append(p_name)
-        elif zone_score < 0:
-            bearish.append(p_name)
-
-    return bullish, bearish
 
 # ==========================================
 # PRE-CALCULATED DAILY TIMELINES (CACHED)
 # ==========================================
 @st.cache_data(show_spinner=False)
-def generate_all_trends_html(year, month, day):
-    start_t = datetime(year, month, day, 9, 15)
-    end_t = datetime(year, month, day, 15, 30)
+def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, close_t):
+    start_t = datetime(year, month, day, open_t.hour, open_t.minute)
+    end_t = datetime(year, month, day, close_t.hour, close_t.minute)
     
     nifty_html_parts = []
     sector_html_parts = {s: [] for s in SECTORS.keys()}
     
     curr_t = start_t
     while curr_t <= end_t:
-        df_sectors, _, _ = calculate_sector_scores(year, month, day, curr_t.hour, curr_t.minute)
+        df_sectors, _, _ = calculate_sector_scores(year, month, day, curr_t.hour, curr_t.minute, lat, lon, tz_offset)
         time_str = curr_t.strftime("%H:%M")
         
         banking = df_sectors[df_sectors["Sector"] == "Banking / Financials"].iloc[0]["Score"]
@@ -260,56 +232,50 @@ def generate_all_trends_html(year, month, day):
         nifty_html_parts.append(f"<div style='flex: 1; background-color: {n_color}; border-right: 1px solid #111;' title='{n_hover}'></div>")
         
         for _, row in df_sectors.iterrows():
-            s_name = row["Sector"]
-            s_score = row["Score"]
-            
-            if s_score >= 2: s_color = "#00CC96"
-            elif s_score <= -2: s_color = "#EF553B"
-            else: s_color = "#2b2b2b"
-                
-            s_hover = f"{time_str} | Score: {s_score:+}"
-            sector_html_parts[s_name].append(f"<div style='flex: 1; background-color: {s_color}; border-right: 1px solid #222;' title='{s_hover}'></div>")
+            s_color = "#00CC96" if row["Score"] >= 2 else "#EF553B" if row["Score"] <= -2 else "#2b2b2b"
+            s_hover = f"{time_str} | Score: {row['Score']:+}"
+            sector_html_parts[row["Sector"]].append(f"<div style='flex: 1; background-color: {s_color}; border-right: 1px solid #222;' title='{s_hover}'></div>")
             
         curr_t += timedelta(minutes=5)
         
     nifty_html = "<div style='display: flex; width: 100%; height: 25px; border-radius: 5px; overflow: hidden; border: 1px solid #444;'>" + "".join(nifty_html_parts) + "</div>"
-    nifty_html += "<div style='display: flex; justify-content: space-between; font-size: 12px; color: #aaa; margin-top: 4px; font-weight: bold;'><span>09:15</span><span>12:15</span><span>15:30</span></div>"
+    nifty_html += f"<div style='display: flex; justify-content: space-between; font-size: 12px; color: #aaa; margin-top: 4px; font-weight: bold;'><span>{open_t.strftime('%H:%M')}</span><span>Mid</span><span>{close_t.strftime('%H:%M')}</span></div>"
     
     sector_html_dict = {}
     for s_name, parts in sector_html_parts.items():
-        s_html = "<div style='display: flex; width: 100%; height: 12px; border-radius: 3px; overflow: hidden; border: 1px solid #444; margin-top: 10px;'>" + "".join(parts) + "</div>"
-        sector_html_dict[s_name] = s_html
+        sector_html_dict[s_name] = "<div style='display: flex; width: 100%; height: 12px; border-radius: 3px; overflow: hidden; border: 1px solid #444; margin-top: 10px;'>" + "".join(parts) + "</div>"
         
     return nifty_html, sector_html_dict
 
 # ==========================================
 # CIRCULAR HOROSCOPE DRAWING ENGINE
 # ==========================================
-def draw_circular_horoscope(year, month, day, hour, minute):
-    current_lagna = get_lagna(year, month, day, hour, minute)
-    planet_positions = get_planetary_positions(year, month, day, hour, minute)
+def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset):
+    current_lagna = get_lagna(year, month, day, hour, minute, lat, lon, tz_offset)
+    planet_positions = get_planetary_positions(year, month, day, hour, minute, tz_offset)
     inner_offset = 30 - current_lagna
 
+    # Full 24 Hours marking mapping
     time_markers = []
-    start_t = datetime(year, month, day, 9, 15)
-    end_t = datetime(year, month, day, 15, 30)
+    start_t = datetime(year, month, day, 0, 0)
+    end_t = datetime(year, month, day, 23, 59)
     curr_t = start_t
     while curr_t <= end_t:
-        l_val = get_lagna(year, month, day, curr_t.hour, curr_t.minute)
+        l_val = get_lagna(year, month, day, curr_t.hour, curr_t.minute, lat, lon, tz_offset)
         time_markers.append((curr_t.strftime("%H:%M"), l_val))
         curr_t += timedelta(minutes=15)
         
     moon_transitions = []
     curr_m = start_t
-    prev_nl, prev_sl = get_moon_nl_sl(year, month, day, curr_m.hour, curr_m.minute)
-    l_val_start = get_lagna(year, month, day, curr_m.hour, curr_m.minute)
+    prev_nl, prev_sl = get_moon_nl_sl(year, month, day, curr_m.hour, curr_m.minute, tz_offset)
+    l_val_start = get_lagna(year, month, day, curr_m.hour, curr_m.minute, lat, lon, tz_offset)
     moon_transitions.append((l_val_start, f"{prev_nl}-{prev_sl}"))
     
     curr_m += timedelta(minutes=1)
     while curr_m <= end_t:
-        curr_nl, curr_sl = get_moon_nl_sl(year, month, day, curr_m.hour, curr_m.minute)
+        curr_nl, curr_sl = get_moon_nl_sl(year, month, day, curr_m.hour, curr_m.minute, tz_offset)
         if curr_nl != prev_nl or curr_sl != prev_sl:
-            l_val = get_lagna(year, month, day, curr_m.hour, curr_m.minute)
+            l_val = get_lagna(year, month, day, curr_m.hour, curr_m.minute, lat, lon, tz_offset)
             moon_transitions.append((l_val, f"{curr_nl}-{curr_sl}"))
             prev_nl, prev_sl = curr_nl, curr_sl
         curr_m += timedelta(minutes=1)
@@ -321,8 +287,6 @@ def draw_circular_horoscope(year, month, day, hour, minute):
     ax.set_theta_zero_location("N") 
     ax.set_theta_direction(1)       
     ax.axis('off')
-    
-    # Expand boundaries slightly to ensure the new outer numbers fit nicely
     ax.set_rmax(16.5)
 
     theta_circle = np.linspace(0, 2 * np.pi, 500)
@@ -338,17 +302,12 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         (300, "+ve big lots buying", "#00CC96"), (330, "-ve heavily -ve", "#EF553B")
     ]
 
-    # --- Outer Labels (Fixed on screen) ---
     for angle in range(0, 360, 30):
         theta = np.radians(angle)
         ax.plot([theta, theta], [10, 14], color='white', lw=1.5, zorder=2)
-        # Degree Text
         ax.text(theta, 14.5, f"{angle}°", ha='center', va='center', fontsize=14, fontweight='bold', color='white')
-        
-        # --- NEW: Fixed Market Zone Numbers (1 to 12) at outer edge ---
         ax.text(np.radians(angle + 15), 15.5, str((angle // 30) + 1), ha='center', va='center', fontsize=22, fontweight='bold', color='white')
 
-    # --- Market Zone Text ---
     for start_deg, text, color in market_zones:
         center_deg = start_deg + 15
         theta = np.radians(center_deg)
@@ -368,18 +327,15 @@ def draw_circular_horoscope(year, month, day, hour, minute):
             empty_rashis.append(rashi_idx) 
             ax.fill_between(np.radians(np.linspace(start_angle + inner_offset, end_angle + inner_offset, 50)), 0, 4, color='#1f2937', alpha=0.6, zorder=1)
 
-    # --- Inner Rotating Grid & Numbers ---
     for angle in range(0, 360, 5):
         theta = np.radians(angle + inner_offset)
         if angle % 30 == 0:
             ax.plot([theta, theta], [0, 10], color='white', lw=2, zorder=2)
-            # --- MOVED: Rashi Numbers (1 to 12) placed in innermost circle (radius 2.0) ---
             ax.text(np.radians(angle + 15 + inner_offset), 2.0, str((angle // 30) + 1), ha='center', va='center', fontsize=22, fontweight='bold', color='white', zorder=2)
         else:
             ax.plot([theta, theta], [0, 10], color='gray', lw=1, linestyle='--', zorder=2)
             ax.text(theta, 9.4, str(angle % 30), ha='center', va='center', fontsize=9, color='#AB63FA', fontweight='bold')
 
-    # --- Plot Planets ---
     used_positions_inner = []
     for planet, data in planet_positions.items():
         shifted_deg = (data["deg"] + inner_offset) % 360
@@ -390,7 +346,6 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         used_positions_inner.append((shifted_deg, radius))
         ax.text(theta, radius, planet, ha='center', va='center', fontsize=9, fontweight='bold', color='black', bbox=dict(boxstyle="circle,pad=0.2", fc="#E2E8F0", ec="none", alpha=1.0), zorder=6)
 
-    # --- RING 1 - Nakshatra Lords ---
     ring1_plots = {p: [] for p in planet_positions.keys()}
     for planet, data in planet_positions.items():
         nl = data["nl"]
@@ -413,7 +368,6 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         shifted_deg = (target_deg + inner_offset) % 360
         theta = np.radians(shifted_deg)
         ring1_rashi_filled[(target_deg // 30) + 1] = True
-        
         for visitor in visitors:
             ring1_where_is_planet[visitor]["degrees"].add(target_deg) 
             radius = 4.3 
@@ -437,7 +391,6 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         theta = np.radians(((rashi_idx - 1) * 30 + 15 + inner_offset) % 360)
         ax.text(theta, 5.5, "-".join(governors), ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#3B82F6", ec="none", alpha=0.95), zorder=7)
         ax.annotate('', xy=(theta + np.radians(13.5), 5.5), xytext=(theta + np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
-        ax.annotate('', xy=(theta - np.radians(13.5), 5.5), xytext=(theta - np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
 
     for r in range(1, 13):
         if not ring1_rashi_filled[r]:
@@ -445,10 +398,7 @@ def draw_circular_horoscope(year, month, day, hour, minute):
             ring1_where_is_planet.setdefault(lord, {"degrees": set(), "rashis": set()})["rashis"].add(r)
             theta = np.radians(((r - 1) * 30 + 15 + inner_offset) % 360)
             ax.text(theta, 5.5, lord, ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#3B82F6", ec="none", alpha=0.95), zorder=7)
-            ax.annotate('', xy=(theta + np.radians(13.5), 5.5), xytext=(theta + np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
-            ax.annotate('', xy=(theta - np.radians(13.5), 5.5), xytext=(theta - np.radians(7), 5.5), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=12), zorder=6)
 
-    # --- RING 2 - Sub Lords ---
     ring2_plots_radial = {}
     ring2_governors = {r: [] for r in empty_rashis}
     ring2_rashi_filled = {r: False for r in range(1, 13)}
@@ -477,17 +427,10 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         ring2_rashi_filled[rashi_idx] = True
         theta = np.radians(((rashi_idx - 1) * 30 + 15 + inner_offset) % 360)
         ax.text(theta, 8.5, "-".join(governors), ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#EF4444", ec="none", alpha=0.95), zorder=7)
-        ax.annotate('', xy=(theta + np.radians(13.5), 8.5), xytext=(theta + np.radians(7), 8.5), arrowprops=dict(arrowstyle="-|>", color='#F87171', lw=2, mutation_scale=12), zorder=6)
-        ax.annotate('', xy=(theta - np.radians(13.5), 8.5), xytext=(theta - np.radians(7), 8.5), arrowprops=dict(arrowstyle="-|>", color='#F87171', lw=2, mutation_scale=12), zorder=6)
 
-    for r in range(1, 13):
-        if not ring2_rashi_filled[r]:
-            t_start = np.radians(((r - 1) * 30 + inner_offset) % 360)
-            t_end = np.radians((r * 30 + inner_offset) % 360)
-            ax.plot([t_start, t_end], [7, 10], color='#EF4444', lw=2, alpha=0.4, zorder=3)
-            ax.plot([t_start, t_end], [10, 7], color='#EF4444', lw=2, alpha=0.4, zorder=3)
-
-    # --- Draw Time Markers ---
+    # ----------------------------------------------------
+    # UPDATE: FULL 24-HOUR TIME LABELS (WHITE TEXT)
+    # ----------------------------------------------------
     for t_str, l_val in time_markers:
         theta = np.radians((l_val + inner_offset) % 360)
         ax.plot([theta, theta], [10, 14], color='gray', lw=1.5, linestyle=':', zorder=4)
@@ -495,17 +438,21 @@ def draw_circular_horoscope(year, month, day, hour, minute):
         if 90 < rot_deg <= 270: rot_deg += 180
         
         is_current = (t_str == f"{hour:02d}:{minute:02d}")
-        f_size = 9 if is_current else 6
-        color = '#00CC96' if is_current else 'gray'
-        ax.text(theta, 13.0, f"L-{t_str}", ha='center', va='center', rotation=rot_deg, fontsize=f_size, fontweight='bold', color=color, bbox=dict(boxstyle="round,pad=0.15", fc="#1f2937", ec="none", alpha=0.9), zorder=5)
+        f_size = 9 if is_current else 5 
+        # Using white color for time as requested
+        color_text = '#00CC96' if is_current else 'white'
+        ax.text(theta, 13.0, f"L-{t_str}", ha='center', va='center', rotation=rot_deg, fontsize=f_size, fontweight='bold', color=color_text, bbox=dict(boxstyle="round,pad=0.15", fc="#1f2937", ec="none", alpha=0.9), zorder=5)
 
-    # --- Draw Minute-by-Minute Moon Transition Text ---
+    # ----------------------------------------------------
+    # UPDATE: NL/SL TRANSITIONS (BLACK TEXT, WHITE BACKGROUND)
+    # ----------------------------------------------------
     for l_val, transition_text in moon_transitions:
         theta = np.radians((l_val + inner_offset) % 360)
         ax.plot([theta, theta], [10, 14], color='#F59E0B', lw=2, linestyle='--', zorder=4)
         rot_deg = (l_val + inner_offset) % 360
         if 90 < rot_deg <= 270: rot_deg += 180
-        ax.text(theta, 13.6, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=8, fontweight='bold', color='#111827', bbox=dict(boxstyle="square,pad=0.1", fc="#F59E0B", ec="none", alpha=0.9), zorder=5)
+        # Color black text on white background
+        ax.text(theta, 13.6, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=7, fontweight='bold', color='black', bbox=dict(boxstyle="square,pad=0.1", fc="white", ec="none", alpha=0.9), zorder=5)
 
     plt.tight_layout()
     return fig
@@ -513,31 +460,46 @@ def draw_circular_horoscope(year, month, day, hour, minute):
 # ==========================================
 # STREAMLIT UI (LAYOUT & DASHBOARD)
 # ==========================================
-default_date, default_time = get_current_ist_rounded()
+st.title("Financial Astrolabe - Global Edition")
+
+# --- UI: Exchange Selection ---
+selected_exchange = st.selectbox("🌍 Select Stock Exchange / Market", list(EXCHANGES.keys()))
+exch_data = EXCHANGES[selected_exchange]
+lat, lon, tz_offset = exch_data["lat"], exch_data["lon"], exch_data["tz"]
+open_t, close_t, ticker = exch_data["open"], exch_data["close"], exch_data["ticker"]
+
+default_date, default_time = get_current_local_rounded(tz_offset, open_t, close_t)
+
+if "current_exchange" not in st.session_state:
+    st.session_state.current_exchange = selected_exchange
+
+# Reset slider to market open if exchange changes to avoid out-of-bounds errors
+if st.session_state.current_exchange != selected_exchange:
+    st.session_state.time_slider = open_t
+    st.session_state.current_exchange = selected_exchange
 
 if "time_slider" not in st.session_state:
     st.session_state.time_slider = default_time
+    
+# Ensure slider is within bounds for the specific exchange
+if st.session_state.time_slider < open_t or st.session_state.time_slider > close_t:
+    st.session_state.time_slider = open_t
 
-def reset_time_on_date_change():
-    st.session_state.time_slider = time(9, 15)
-
-st.title("Financial Astrolabe - Master Edition")
 tithi_banner_placeholder = st.empty()
-
 ctrl_col1, ctrl_col2 = st.columns([1, 3])
 
 with ctrl_col1:
-    selected_date = st.date_input("Select Date", default_date, on_change=reset_time_on_date_change)
+    selected_date = st.date_input("Select Date", default_date, on_change=lambda: st.session_state.update(time_slider=open_t))
     
 with ctrl_col2:
     with st.spinner("Pre-calculating Nakshatra filters..."):
-        nifty_trend_html, sector_trend_htmls = generate_all_trends_html(selected_date.year, selected_date.month, selected_date.day)
+        nifty_trend_html, sector_trend_htmls = generate_all_trends_html(selected_date.year, selected_date.month, selected_date.day, lat, lon, tz_offset, open_t, close_t)
         st.markdown(nifty_trend_html, unsafe_allow_html=True)
     
     selected_time = st.slider(
-        "⏳ Slide to Rotate Time",
-        min_value=time(9, 15),
-        max_value=time(15, 30),
+        f"⏳ Rotate Time ({ticker} Trading Hours)",
+        min_value=open_t,
+        max_value=close_t,
         value=st.session_state.time_slider,
         step=timedelta(minutes=5),
         format="HH:mm",
@@ -547,10 +509,10 @@ with ctrl_col2:
 
 st.divider()
 
-tithi_message = get_tithi_info(selected_date.year, selected_date.month, selected_date.day, 9, 15)
+tithi_message = get_tithi_info(selected_date.year, selected_date.month, selected_date.day, open_t.hour, open_t.minute, tz_offset)
 tithi_banner_placeholder.markdown(
     f"<div style='padding: 10px; border-radius: 5px; background-color: #2D3748; text-align: center; border: 1px solid #4A5568; margin-bottom: 20px;'>"
-    f"<h4 style='color: #E2E8F0; margin: 0;'>🌌 Daily Cosmic Environment: {tithi_message}</h4>"
+    f"<h4 style='color: #E2E8F0; margin: 0;'>🌌 Daily Cosmic Environment ({ticker} Open): {tithi_message}</h4>"
     f"</div>", 
     unsafe_allow_html=True
 )
@@ -558,18 +520,24 @@ tithi_banner_placeholder.markdown(
 col_left, col_right = st.columns([6, 4], gap="large")
 
 with col_left:
-    st.subheader(f"Astrolabe Mapping at {selected_time.strftime('%H:%M')}")
+    st.subheader(f"Astrolabe Mapping at {selected_time.strftime('%H:%M')} (Local Time)")
     with st.spinner("Calculating Ephemeris..."):
         fig = draw_circular_horoscope(
             selected_date.year, selected_date.month, selected_date.day, 
-            selected_time.hour, selected_time.minute
+            selected_time.hour, selected_time.minute, lat, lon, tz_offset
         )
         st.pyplot(fig, use_container_width=True)
         
-    if selected_time >= time(15, 15):
+    # BTST Predictor dynamic timing (15 mins before market close)
+    close_dt = datetime.combine(selected_date, close_t)
+    trigger_dt = close_dt - timedelta(minutes=15)
+    trigger_time = trigger_dt.time()
+
+    if selected_time >= trigger_time:
         st.markdown("---")
-        st.markdown("### 🌙 BTST Astro-Gap Predictor (15:15 Trigger)")
-        jd_close = get_jd(selected_date.year, selected_date.month, selected_date.day, 15, 15)
+        st.markdown(f"### 🌙 BTST Astro-Gap Predictor ({trigger_time.strftime('%H:%M')} Trigger)")
+        jd_close = get_jd(selected_date.year, selected_date.month, selected_date.day, trigger_time.hour, trigger_time.minute, tz_offset)
+        swe.set_sid_mode(swe.SIDM_LAHIRI)
         moon_close = swe.calc_ut(jd_close, swe.MOON)[0][0]
         sun_close = swe.calc_ut(jd_close, swe.SUN)[0][0]
         
@@ -581,31 +549,38 @@ with col_left:
 with col_right:
     df_sectors, planet_positions, current_lagna = calculate_sector_scores(
         selected_date.year, selected_date.month, selected_date.day, 
-        selected_time.hour, selected_time.minute
+        selected_time.hour, selected_time.minute, lat, lon, tz_offset
     )
     
-
-    bullish_planets, bearish_planets = get_bullish_bearish_planets(
-        selected_date.year, selected_date.month, selected_date.day,
-        selected_time.hour, selected_time.minute
+    bullish_planets = []
+    bearish_planets = []
+    inner_offset = 30 - current_lagna
+    
+    for p_name, data in planet_positions.items():
+        shifted_deg = (data["deg"] + inner_offset) % 360
+        zone_idx = int(shifted_deg // 30)
+        
+        if ZONE_SCORES[zone_idx] == 1:
+            bullish_planets.append(p_name)
+        elif ZONE_SCORES[zone_idx] == -1:
+            bearish_planets.append(p_name)
+            
+    st.markdown("### Planet House Seating")
+    st.markdown(
+        f"| 🟢 BULLISH ({len(bullish_planets)}) | 🔴 BEARISH ({len(bearish_planets)}) |\n"
+        f"| :--- | :--- |\n"
+        f"| **{', '.join(bullish_planets) if bullish_planets else '-'}** | **{', '.join(bearish_planets) if bearish_planets else '-'}** |"
     )
-
-    bb_df = pd.DataFrame({
-        f"BULLISH ({len(bullish_planets)})": [", ".join(bullish_planets) if bullish_planets else "-"],
-        f"BEARISH ({len(bearish_planets)})": [", ".join(bearish_planets) if bearish_planets else "-"]
-    })
-
-    st.markdown("### Planet Position Summary")
-    st.table(bb_df)
-
-    st.subheader("Intraday Live Scoring")
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    st.subheader(f"Intraday Live Scoring ({ticker})")
     
     malefics = ["SA", "MA", "RA"]
     warnings = []
     for m in malefics:
         dist = ang_dist(current_lagna, planet_positions[m]["deg"])
         if abs(dist - 150) < 3 or abs(dist - 210) < 3:
-            warnings.append(f"⚠️ **6/8 Shadastak Alert:** Lagna is severely afflicted by {m}. High risk of sudden intraday reversal or heavy profit booking right now.")
+            warnings.append(f"⚠️ **6/8 Shadastak Alert:** Lagna is severely afflicted by {m}. High risk of sudden intraday reversal.")
         elif abs(dist - 90) < 3:
             warnings.append(f"⚠️ **4/10 Square Alert:** Lagna is squaring {m}. Expect friction and sudden volatility spikes.")
             
@@ -620,17 +595,17 @@ with col_right:
     
     nifty_total = (banking_score * 3) + (it_score * 2) + energy_score + fmcg_score
     
-    st.markdown("### NIFTY 50 Directional Bias (True Strength)")
+    st.markdown(f"### {ticker} Directional Bias (True Strength)")
     if nifty_total >= 6:
-        st.success(f"📈 **POWERFUL BULLISH (+)**\n\nNIFTY True Score: **{nifty_total}**\n\nHeavyweights AND their Star Lords are aligned in positive zones.")
+        st.success(f"📈 **POWERFUL BULLISH (+)**\n\n{ticker} True Score: **{nifty_total}**\n\nHeavyweights AND their Star Lords are aligned in positive zones.")
     elif nifty_total <= -6:
-        st.error(f"📉 **POWERFUL BEARISH (-)**\n\nNIFTY True Score: **{nifty_total}**\n\nHeavyweights AND their Star Lords are aligned in disposal zones.")
+        st.error(f"📉 **POWERFUL BEARISH (-)**\n\n{ticker} True Score: **{nifty_total}**\n\nHeavyweights AND their Star Lords are aligned in disposal zones.")
     elif nifty_total > 0:
-        st.info(f"↗️ **SLIGHT BULLISH / SIDEWAYS**\n\nNIFTY True Score: **{nifty_total}**\n\nMixed Star Lord support. Watch technical breakouts.")
+        st.info(f"↗️ **SLIGHT BULLISH / SIDEWAYS**\n\n{ticker} True Score: **{nifty_total}**\n\nMixed Star Lord support. Watch technical breakouts.")
     elif nifty_total < 0:
-        st.warning(f"↘️ **SLIGHT BEARISH / SIDEWAYS**\n\nNIFTY True Score: **{nifty_total}**\n\nMixed Star Lord support. Watch technical breakdowns.")
+        st.warning(f"↘️ **SLIGHT BEARISH / SIDEWAYS**\n\n{ticker} True Score: **{nifty_total}**\n\nMixed Star Lord support. Watch technical breakdowns.")
     else:
-        st.warning(f"⚖️ **CHOPPY / NEUTRAL**\n\nNIFTY True Score: **0**\n\nPlanets and Star Lords are completely contradicting each other. Avoid Index trading.")
+        st.warning(f"⚖️ **CHOPPY / NEUTRAL**\n\n{ticker} True Score: **0**\n\nPlanets and Star Lords are completely contradicting each other.")
     
     st.divider()
     
