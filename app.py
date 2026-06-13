@@ -198,12 +198,13 @@ def calculate_sector_scores(year, month, day, hour, minute, lat, lon, tz_offset)
     return pd.DataFrame(sector_results), planets, lagna
 
 # ==========================================
-# PRE-CALCULATED DAILY TIMELINES (24 HOURS)
+# PRE-CALCULATED DAILY TIMELINES (MARKET HOURS)
 # ==========================================
 @st.cache_data(show_spinner=False)
 def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, close_t):
-    start_t = datetime(year, month, day, 0, 0)
-    end_t = datetime(year, month, day, 23, 59)
+    # Restricted to Market Hours
+    start_t = datetime(year, month, day, open_t.hour, open_t.minute)
+    end_t = datetime(year, month, day, close_t.hour, close_t.minute)
     
     nifty_html_parts = []
     sector_html_parts = {s: [] for s in SECTORS.keys()}
@@ -225,13 +226,7 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
         else: n_color = "#2b2b2b"
             
         n_hover = f"{time_str} | True Score: {nifty_total}"
-        
-        # Add visual markers inside the HTML to show market open/close times
-        border_style = "border-right: 1px solid #111;"
-        if curr_t.time() == open_t: border_style = "border-right: 2px solid #00FFFF;"
-        if curr_t.time() == close_t: border_style = "border-right: 2px solid #00FFFF;"
-
-        nifty_html_parts.append(f"<div style='flex: 1; background-color: {n_color}; {border_style}' title='{n_hover}'></div>")
+        nifty_html_parts.append(f"<div style='flex: 1; background-color: {n_color}; border-right: 1px solid #111;' title='{n_hover}'></div>")
         
         for _, row in df_sectors.iterrows():
             s_color = "#00CC96" if row["Score"] >= 2 else "#EF553B" if row["Score"] <= -2 else "#2b2b2b"
@@ -242,12 +237,11 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
         
     nifty_html = "<div style='display: flex; width: 100%; height: 25px; border-radius: 5px; overflow: hidden; border: 1px solid #444;'>" + "".join(nifty_html_parts) + "</div>"
     
-    # 24-hour labeling with specific callouts for Open and Close
+    # Label strictly for Market Hours span
     nifty_html += f"<div style='display: flex; justify-content: space-between; font-size: 12px; color: #aaa; margin-top: 4px; font-weight: bold;'>"
-    nifty_html += f"<span>00:00</span>"
-    nifty_html += f"<span style='color: #00FFFF;'>{open_t.strftime('%H:%M')} (Open)</span>"
-    nifty_html += f"<span style='color: #00FFFF;'>{close_t.strftime('%H:%M')} (Close)</span>"
-    nifty_html += f"<span>23:59</span></div>"
+    nifty_html += f"<span>{open_t.strftime('%H:%M')} (Open)</span>"
+    nifty_html += f"<span>Mid</span>"
+    nifty_html += f"<span>{close_t.strftime('%H:%M')} (Close)</span></div>"
     
     sector_html_dict = {}
     for s_name, parts in sector_html_parts.items():
@@ -461,49 +455,56 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
 # ==========================================
 st.title("Financial Astrolabe - Global Edition")
 
-selected_exchange = st.selectbox("🌍 Select Stock Exchange / Market", list(EXCHANGES.keys()))
+# --- UI Layout: Row 1 (Date & Exchange side-by-side) ---
+top_col1, top_col2 = st.columns(2)
+
+with top_col2:
+    selected_exchange = st.selectbox("🌍 Select Stock Exchange / Market", list(EXCHANGES.keys()))
+
 exch_data = EXCHANGES[selected_exchange]
 lat, lon, tz_offset = exch_data["lat"], exch_data["lon"], exch_data["tz"]
 open_t, close_t, ticker = exch_data["open"], exch_data["close"], exch_data["ticker"]
 
 default_date, default_time = get_current_local_rounded(tz_offset)
 
+# Session State Handling
 if "current_exchange" not in st.session_state:
     st.session_state.current_exchange = selected_exchange
 
-# Reset slider to market open if exchange changes to maintain proper bounds visually initially
+# Reset slider to market open if exchange changes to maintain proper bounds visually
 if st.session_state.current_exchange != selected_exchange:
     st.session_state.time_slider = open_t
     st.session_state.current_exchange = selected_exchange
 
 if "time_slider" not in st.session_state:
     st.session_state.time_slider = default_time
-    
-tithi_banner_placeholder = st.empty()
-ctrl_col1, ctrl_col2 = st.columns([1, 3])
 
-with ctrl_col1:
-    selected_date = st.date_input("Select Date", default_date, on_change=lambda: st.session_state.update(time_slider=open_t))
-    
-with ctrl_col2:
-    with st.spinner("Pre-calculating Nakshatra filters..."):
-        nifty_trend_html, sector_trend_htmls = generate_all_trends_html(selected_date.year, selected_date.month, selected_date.day, lat, lon, tz_offset, open_t, close_t)
-        st.markdown(nifty_trend_html, unsafe_allow_html=True)
-    
-    selected_time = st.slider(
-        f"⏳ Rotate Time (00:00 to 23:59) | 🏛️ Market Hours: {open_t.strftime('%H:%M')} to {close_t.strftime('%H:%M')} Local",
-        min_value=time(0, 0),
-        max_value=time(23, 59),
-        value=st.session_state.time_slider,
-        step=timedelta(minutes=5),
-        format="HH:mm",
-        key="time_slider",
-    )
+with top_col1:
+    selected_date = st.date_input("📅 Select Date", default_date, on_change=lambda: st.session_state.update(time_slider=open_t))
+
+# --- UI Layout: Row 2 (Full Width Trends & Slider) ---
+st.markdown(f"### {ticker} Market Trends Timeline")
+with st.spinner("Pre-calculating Nakshatra filters..."):
+    nifty_trend_html, sector_trend_htmls = generate_all_trends_html(selected_date.year, selected_date.month, selected_date.day, lat, lon, tz_offset, open_t, close_t)
+    st.markdown(nifty_trend_html, unsafe_allow_html=True)
+
+# Full-width timeline slider spanning 00:00 to 23:59
+selected_time = st.slider(
+    f"⏳ Rotate Time (00:00 to 23:59) | 🏛️ Market Hours: {open_t.strftime('%H:%M')} to {close_t.strftime('%H:%M')} Local",
+    min_value=time(0, 0),
+    max_value=time(23, 59),
+    value=st.session_state.time_slider,
+    step=timedelta(minutes=5),
+    format="HH:mm",
+    key="time_slider",
+    label_visibility="visible"
+)
 
 st.divider()
 
 # Ensure we use market open time for the baseline Tithi of the day
 tithi_message = get_tithi_info(selected_date.year, selected_date.month, selected_date.day, open_t.hour, open_t.minute, tz_offset)
+tithi_banner_placeholder = st.empty()
 tithi_banner_placeholder.markdown(
     f"<div style='padding: 10px; border-radius: 5px; background-color: #2D3748; text-align: center; border: 1px solid #4A5568; margin-bottom: 20px;'>"
     f"<h4 style='color: #E2E8F0; margin: 0;'>🌌 Daily Cosmic Environment ({ticker} Open): {tithi_message}</h4>"
@@ -511,6 +512,7 @@ tithi_banner_placeholder.markdown(
     unsafe_allow_html=True
 )
 
+# --- UI Layout: Row 3 (Astrolabe and Intraday Scores) ---
 col_left, col_right = st.columns([6, 4], gap="large")
 
 with col_left:
@@ -603,7 +605,7 @@ with col_right:
     
     st.divider()
     
-    st.markdown("### Individual Sector True Scores")
+    st.markdown(f"### Individual Sector True Scores ({ticker} Market Hours)")
     st.caption("Score incorporates Planet Zone + Nakshatra Lord Zone. ±2 required for strong conviction.")
     
     grid_cols = st.columns(2)
