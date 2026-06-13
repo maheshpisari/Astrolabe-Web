@@ -30,7 +30,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# EXCHANGES CONFIGURATION (New Requirement)
+# EXCHANGES CONFIGURATION
 # ==========================================
 EXCHANGES = {
     "National Stock Exchange (India)": {
@@ -38,7 +38,7 @@ EXCHANGES = {
         "open": time(9, 15), "close": time(15, 30), "ticker": "NIFTY 50"
     },
     "New York Stock Exchange (US)": {
-        "lat": 40.7128, "lon": -74.0060, "tz": -4.0, # Eastern Time approx
+        "lat": 40.7128, "lon": -74.0060, "tz": -4.0, 
         "open": time(9, 30), "close": time(16, 0), "ticker": "NYSE"
     },
     "Nasdaq (US)": {
@@ -46,7 +46,7 @@ EXCHANGES = {
         "open": time(9, 30), "close": time(16, 0), "ticker": "NASDAQ"
     },
     "London Stock Exchange (EU)": {
-        "lat": 51.5074, "lon": -0.1278, "tz": 1.0, # London Time approx
+        "lat": 51.5074, "lon": -0.1278, "tz": 1.0, 
         "open": time(8, 0), "close": time(16, 30), "ticker": "FTSE"
     }
 }
@@ -82,9 +82,9 @@ SECTORS = {
 ZONE_SCORES = [1, 1, -1, 1, 0, -1, 1, -1, 1, -1, 1, -1]
 
 # ==========================================
-# CORE CALCULATION FUNCTIONS (Now Exchange-Aware)
+# CORE CALCULATION FUNCTIONS
 # ==========================================
-def get_current_local_rounded(tz_offset, open_t, close_t):
+def get_current_local_rounded(tz_offset):
     utc_now = datetime.now(timezone.utc)
     local_now = utc_now + timedelta(hours=tz_offset)
     minute = 5 * round(local_now.minute / 5)
@@ -92,11 +92,7 @@ def get_current_local_rounded(tz_offset, open_t, close_t):
         local_now += timedelta(hours=1)
         minute = 0
     rounded_time = local_now.replace(minute=minute, second=0, microsecond=0)
-    
-    final_time = rounded_time.time()
-    if final_time < open_t: final_time = open_t
-    if final_time > close_t: final_time = close_t
-    return rounded_time.date(), final_time
+    return rounded_time.date(), rounded_time.time()
 
 def get_jd(year, month, day, hour, minute, tz_offset):
     local_time = datetime(year, month, day, hour, minute)
@@ -202,12 +198,12 @@ def calculate_sector_scores(year, month, day, hour, minute, lat, lon, tz_offset)
     return pd.DataFrame(sector_results), planets, lagna
 
 # ==========================================
-# PRE-CALCULATED DAILY TIMELINES (CACHED)
+# PRE-CALCULATED DAILY TIMELINES (24 HOURS)
 # ==========================================
 @st.cache_data(show_spinner=False)
 def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, close_t):
-    start_t = datetime(year, month, day, open_t.hour, open_t.minute)
-    end_t = datetime(year, month, day, close_t.hour, close_t.minute)
+    start_t = datetime(year, month, day, 0, 0)
+    end_t = datetime(year, month, day, 23, 59)
     
     nifty_html_parts = []
     sector_html_parts = {s: [] for s in SECTORS.keys()}
@@ -229,7 +225,13 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
         else: n_color = "#2b2b2b"
             
         n_hover = f"{time_str} | True Score: {nifty_total}"
-        nifty_html_parts.append(f"<div style='flex: 1; background-color: {n_color}; border-right: 1px solid #111;' title='{n_hover}'></div>")
+        
+        # Add visual markers inside the HTML to show market open/close times
+        border_style = "border-right: 1px solid #111;"
+        if curr_t.time() == open_t: border_style = "border-right: 2px solid #00FFFF;"
+        if curr_t.time() == close_t: border_style = "border-right: 2px solid #00FFFF;"
+
+        nifty_html_parts.append(f"<div style='flex: 1; background-color: {n_color}; {border_style}' title='{n_hover}'></div>")
         
         for _, row in df_sectors.iterrows():
             s_color = "#00CC96" if row["Score"] >= 2 else "#EF553B" if row["Score"] <= -2 else "#2b2b2b"
@@ -239,7 +241,13 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
         curr_t += timedelta(minutes=5)
         
     nifty_html = "<div style='display: flex; width: 100%; height: 25px; border-radius: 5px; overflow: hidden; border: 1px solid #444;'>" + "".join(nifty_html_parts) + "</div>"
-    nifty_html += f"<div style='display: flex; justify-content: space-between; font-size: 12px; color: #aaa; margin-top: 4px; font-weight: bold;'><span>{open_t.strftime('%H:%M')}</span><span>Mid</span><span>{close_t.strftime('%H:%M')}</span></div>"
+    
+    # 24-hour labeling with specific callouts for Open and Close
+    nifty_html += f"<div style='display: flex; justify-content: space-between; font-size: 12px; color: #aaa; margin-top: 4px; font-weight: bold;'>"
+    nifty_html += f"<span>00:00</span>"
+    nifty_html += f"<span style='color: #00FFFF;'>{open_t.strftime('%H:%M')} (Open)</span>"
+    nifty_html += f"<span style='color: #00FFFF;'>{close_t.strftime('%H:%M')} (Close)</span>"
+    nifty_html += f"<span>23:59</span></div>"
     
     sector_html_dict = {}
     for s_name, parts in sector_html_parts.items():
@@ -255,7 +263,6 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
     planet_positions = get_planetary_positions(year, month, day, hour, minute, tz_offset)
     inner_offset = 30 - current_lagna
 
-    # Full 24 Hours marking mapping
     time_markers = []
     start_t = datetime(year, month, day, 0, 0)
     end_t = datetime(year, month, day, 23, 59)
@@ -428,9 +435,6 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
         theta = np.radians(((rashi_idx - 1) * 30 + 15 + inner_offset) % 360)
         ax.text(theta, 8.5, "-".join(governors), ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#EF4444", ec="none", alpha=0.95), zorder=7)
 
-    # ----------------------------------------------------
-    # UPDATE: FULL 24-HOUR TIME LABELS (WHITE TEXT)
-    # ----------------------------------------------------
     for t_str, l_val in time_markers:
         theta = np.radians((l_val + inner_offset) % 360)
         ax.plot([theta, theta], [10, 14], color='gray', lw=1.5, linestyle=':', zorder=4)
@@ -439,19 +443,14 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
         
         is_current = (t_str == f"{hour:02d}:{minute:02d}")
         f_size = 9 if is_current else 5 
-        # Using white color for time as requested
         color_text = '#00CC96' if is_current else 'white'
         ax.text(theta, 13.0, f"L-{t_str}", ha='center', va='center', rotation=rot_deg, fontsize=f_size, fontweight='bold', color=color_text, bbox=dict(boxstyle="round,pad=0.15", fc="#1f2937", ec="none", alpha=0.9), zorder=5)
 
-    # ----------------------------------------------------
-    # UPDATE: NL/SL TRANSITIONS (BLACK TEXT, WHITE BACKGROUND)
-    # ----------------------------------------------------
     for l_val, transition_text in moon_transitions:
         theta = np.radians((l_val + inner_offset) % 360)
         ax.plot([theta, theta], [10, 14], color='#F59E0B', lw=2, linestyle='--', zorder=4)
         rot_deg = (l_val + inner_offset) % 360
         if 90 < rot_deg <= 270: rot_deg += 180
-        # Color black text on white background
         ax.text(theta, 13.6, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=7, fontweight='bold', color='black', bbox=dict(boxstyle="square,pad=0.1", fc="white", ec="none", alpha=0.9), zorder=5)
 
     plt.tight_layout()
@@ -462,18 +461,17 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
 # ==========================================
 st.title("Financial Astrolabe - Global Edition")
 
-# --- UI: Exchange Selection ---
 selected_exchange = st.selectbox("🌍 Select Stock Exchange / Market", list(EXCHANGES.keys()))
 exch_data = EXCHANGES[selected_exchange]
 lat, lon, tz_offset = exch_data["lat"], exch_data["lon"], exch_data["tz"]
 open_t, close_t, ticker = exch_data["open"], exch_data["close"], exch_data["ticker"]
 
-default_date, default_time = get_current_local_rounded(tz_offset, open_t, close_t)
+default_date, default_time = get_current_local_rounded(tz_offset)
 
 if "current_exchange" not in st.session_state:
     st.session_state.current_exchange = selected_exchange
 
-# Reset slider to market open if exchange changes to avoid out-of-bounds errors
+# Reset slider to market open if exchange changes to maintain proper bounds visually initially
 if st.session_state.current_exchange != selected_exchange:
     st.session_state.time_slider = open_t
     st.session_state.current_exchange = selected_exchange
@@ -481,10 +479,6 @@ if st.session_state.current_exchange != selected_exchange:
 if "time_slider" not in st.session_state:
     st.session_state.time_slider = default_time
     
-# Ensure slider is within bounds for the specific exchange
-if st.session_state.time_slider < open_t or st.session_state.time_slider > close_t:
-    st.session_state.time_slider = open_t
-
 tithi_banner_placeholder = st.empty()
 ctrl_col1, ctrl_col2 = st.columns([1, 3])
 
@@ -497,18 +491,18 @@ with ctrl_col2:
         st.markdown(nifty_trend_html, unsafe_allow_html=True)
     
     selected_time = st.slider(
-        f"⏳ Rotate Time ({ticker} Trading Hours)",
-        min_value=open_t,
-        max_value=close_t,
+        f"⏳ Rotate Time (00:00 to 23:59) | 🏛️ Market Hours: {open_t.strftime('%H:%M')} to {close_t.strftime('%H:%M')} Local",
+        min_value=time(0, 0),
+        max_value=time(23, 59),
         value=st.session_state.time_slider,
         step=timedelta(minutes=5),
         format="HH:mm",
         key="time_slider",
-        label_visibility="collapsed"
     )
 
 st.divider()
 
+# Ensure we use market open time for the baseline Tithi of the day
 tithi_message = get_tithi_info(selected_date.year, selected_date.month, selected_date.day, open_t.hour, open_t.minute, tz_offset)
 tithi_banner_placeholder.markdown(
     f"<div style='padding: 10px; border-radius: 5px; background-color: #2D3748; text-align: center; border: 1px solid #4A5568; margin-bottom: 20px;'>"
@@ -528,14 +522,14 @@ with col_left:
         )
         st.pyplot(fig, use_container_width=True)
         
-    # BTST Predictor dynamic timing (15 mins before market close)
+    # BTST Predictor dynamic timing (1.5 hours / 90 mins before market close)
     close_dt = datetime.combine(selected_date, close_t)
-    trigger_dt = close_dt - timedelta(minutes=15)
+    trigger_dt = close_dt - timedelta(minutes=90)
     trigger_time = trigger_dt.time()
 
     if selected_time >= trigger_time:
         st.markdown("---")
-        st.markdown(f"### 🌙 BTST Astro-Gap Predictor ({trigger_time.strftime('%H:%M')} Trigger)")
+        st.markdown(f"### 🌙 BTST Astro-Gap Predictor ({trigger_time.strftime('%H:%M')} Trigger - 1.5 Hrs before close)")
         jd_close = get_jd(selected_date.year, selected_date.month, selected_date.day, trigger_time.hour, trigger_time.minute, tz_offset)
         swe.set_sid_mode(swe.SIDM_LAHIRI)
         moon_close = swe.calc_ut(jd_close, swe.MOON)[0][0]
