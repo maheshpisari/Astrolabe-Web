@@ -525,27 +525,6 @@ with col_left:
         )
         st.pyplot(fig, use_container_width=True)
         
-    # --- MOVED: 5-Minute Time Dropdown to Lower Left below the Chart ---
-    dropdown_col1, _ = st.columns([1, 1])
-    with dropdown_col1:
-        time_options = [time(h, m) for h in range(24) for m in range(0, 60, 5)]
-        
-        rounded_min = 5 * (selected_time.minute // 5)
-        safe_time = time(selected_time.hour, rounded_min)
-        try:
-            t_idx = time_options.index(safe_time)
-        except ValueError:
-            t_idx = 0
-            
-        st.selectbox(
-            "Quick Select Time (5m intervals)",
-            options=time_options,
-            index=t_idx,
-            format_func=lambda t: t.strftime("%H:%M"),
-            key="time_dropdown",
-            on_change=sync_time_from_dropdown
-        )
-        
     close_dt = datetime.combine(selected_date, close_t)
     trigger_dt = close_dt - timedelta(minutes=90)
     trigger_time = trigger_dt.time()
@@ -626,6 +605,24 @@ with col_right:
     
     st.divider()
     
+    # --- 5-Minute Time Dropdown (Moved to abut Sector Scores) ---
+    time_options = [time(h, m) for h in range(24) for m in range(0, 60, 5)]
+    rounded_min = 5 * (selected_time.minute // 5)
+    safe_time = time(selected_time.hour, rounded_min)
+    try:
+        t_idx = time_options.index(safe_time)
+    except ValueError:
+        t_idx = 0
+        
+    st.selectbox(
+        "⏱️ Quick Select Time (5m intervals)",
+        options=time_options,
+        index=t_idx,
+        format_func=lambda t: t.strftime("%H:%M"),
+        key="time_dropdown",
+        on_change=sync_time_from_dropdown
+    )
+    
     st.markdown(f"### Individual Sector True Scores ({ticker} Market Hours)")
     st.caption("Score incorporates Planet Zone + Nakshatra Lord Zone. ±2 required for strong conviction.")
     
@@ -635,10 +632,10 @@ with col_right:
         sector_name = row['Sector']
         with col:
             st.markdown(
-                f"<div style='padding: 10px; border-radius: 5px; background-color: #1f2937; margin-bottom: 10px; border-left: 5px solid {row['Color']}'>"
-                f"<strong style='color: white; font-size: 16px;'>{sector_name}</strong><br>"
-                f"<span style='color: {row['Color']}; font-weight: bold;'>True Score: {row['Score']:+d} ({row['Sentiment']})</span>"
-                f"{sector_trend_htmls[sector_name]}"
+                f"<div style='padding: 10px; border-radius: 5px; background-color: #1f2937; margin-bottom: 10px; border-left: 5px solid {row['Color']}'>"\
+                f"<strong style='color: white; font-size: 16px;'>{sector_name}</strong><br>"\
+                f"<span style='color: {row['Color']}; font-weight: bold;'>True Score: {row['Score']:+d} ({row['Sentiment']})</span>"\
+                f"{sector_trend_htmls[sector_name]}"\
                 f"</div>", 
                 unsafe_allow_html=True
             )
