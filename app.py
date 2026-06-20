@@ -132,11 +132,12 @@ def get_planetary_positions(year, month, day, hour, minute, tz_offset):
     
     planets = {
         "SU": swe.SUN, "MO": swe.MOON, "MA": swe.MARS, "ME": swe.MERCURY, 
-        "JU": swe.JUPITER, "VE": swe.VENUS, "SA": swe.SATURN, "RA": swe.MEAN_NODE
+        "JU": swe.JUPITER, "VE": swe.VENUS, "SA": SATURN, "RA": swe.MEAN_NODE
     }
     positions = {}
     ra_exact_lon = 0
     for name, p_id in planets.items():
+        if p_id is None: p_id = swe.SATURN # Fallback logic safety
         pos, _ = swe.calc_ut(jd, p_id, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
         lon = pos[0]
         if name == "RA": ra_exact_lon = lon
@@ -306,9 +307,7 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
     for angle in range(0, 360, 30):
         theta = np.radians(angle)
         ax.plot([theta, theta], [9.5, 12.0], color='white', lw=1.5, zorder=2)
-        # Fontsize reduced to 75%: 14 -> 10.5
         ax.text(theta, 12.3, f"{angle}°", ha='center', va='center', fontsize=10.5, fontweight='bold', color='white')
-        # Fontsize reduced to 75%: 22 -> 16.5
         ax.text(np.radians(angle + 15), 12.8, str((angle // 30) + 1), ha='center', va='center', fontsize=16.5, fontweight='bold', color='white')
 
     for start_deg, text, color in market_zones:
@@ -316,7 +315,6 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
         theta = np.radians(center_deg)
         rot = center_deg
         if 90 < rot <= 270: rot += 180
-        # Fontsize reduced to 75%: 11 -> 8.25
         ax.text(theta, 10.7, text, ha='center', va='center', fontsize=8.25, fontweight='bold', color=color, rotation=rot) 
 
     ax.plot(theta_circle, np.full_like(theta_circle, 4), color='white', lw=1.5, zorder=3)
@@ -335,11 +333,9 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
         theta = np.radians(angle + inner_offset)
         if angle % 30 == 0:
             ax.plot([theta, theta], [0, 9.5], color='white', lw=2, zorder=2)
-            # Fontsize reduced to 75%: 22 -> 16.5
             ax.text(np.radians(angle + 15 + inner_offset), 2.0, str((angle // 30) + 1), ha='center', va='center', fontsize=16.5, fontweight='bold', color='white', zorder=2)
         else:
             ax.plot([theta, theta], [0, 9.5], color='gray', lw=1, linestyle='--', zorder=2)
-            # Fontsize reduced to 75%: 9 -> 6.75
             ax.text(theta, 8.9, str(angle % 30), ha='center', va='center', fontsize=6.75, color='#AB63FA', fontweight='bold')
 
     used_positions_inner = []
@@ -350,7 +346,6 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
         while any(ang_dist(shifted_deg, p_deg) < 4.0 and abs(radius - p_rad) < 0.6 for p_deg, p_rad in used_positions_inner):
             radius -= 0.65 
         used_positions_inner.append((shifted_deg, radius))
-        # Fontsize reduced to 75%: 9 -> 6.75
         ax.text(theta, radius, planet, ha='center', va='center', fontsize=6.75, fontweight='bold', color='black', bbox=dict(boxstyle="circle,pad=0.2", fc="#E2E8F0", ec="none", alpha=1.0), zorder=6)
 
     ring1_plots = {p: [] for p in planet_positions.keys()}
@@ -381,7 +376,6 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
             while any(ang_dist(shifted_deg, p_deg) < 3.5 and abs(radius - p_rad) < 0.45 for p_deg, p_rad in used_positions_ring1):
                 radius += 0.45 
             used_positions_ring1.append((shifted_deg, radius))
-            # Fontsize reduced to 75%: 7 -> 5.25
             ax.text(theta, radius, visitor, ha='center', va='center', fontsize=5.25, fontweight='bold', color='#111827', bbox=dict(boxstyle="round,pad=0.1", fc="#93C5FD", ec="white", lw=0.5, alpha=0.9), zorder=6)
 
     rashi_governors = {r: [] for r in empty_rashis}
@@ -397,9 +391,7 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
         ring1_rashi_filled[rashi_idx] = True
         for g in governors: ring1_where_is_planet[g]["rashis"].add(rashi_idx) 
         theta = np.radians(((rashi_idx - 1) * 30 + 15 + inner_offset) % 360)
-        # Fontsize reduced to 75%: 11 -> 8.25
         ax.text(theta, 5.2, "-".join(governors), ha='center', va='center', fontsize=8.25, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#3B82F6", ec="none", alpha=0.95), zorder=7)
-        # Mutation scale reduced to 75%: 12 -> 9
         ax.annotate('', xy=(theta + np.radians(13.5), 5.2), xytext=(theta + np.radians(7), 5.2), arrowprops=dict(arrowstyle="-|>", color='#60A5FA', lw=2, mutation_scale=9), zorder=6)
 
     for r in range(1, 13):
@@ -407,7 +399,6 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
             lord = RASHI_LORDS[r]
             ring1_where_is_planet.setdefault(lord, {"degrees": set(), "rashis": set()})["rashis"].add(r)
             theta = np.radians(((r - 1) * 30 + 15 + inner_offset) % 360)
-            # Fontsize reduced to 75%: 11 -> 8.25
             ax.text(theta, 5.2, lord, ha='center', va='center', fontsize=8.25, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#3B82F6", ec="none", alpha=0.95), zorder=7)
 
     ring2_plots_radial = {}
@@ -431,14 +422,12 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
             while any(ang_dist(shifted_deg, p_deg) < 3.5 and abs(radius - p_rad) < 0.45 for p_deg, p_rad in used_positions_ring2):
                 radius += 0.45 
             used_positions_ring2.append((shifted_deg, radius))
-            # Fontsize reduced to 75%: 7 -> 5.25
             ax.text(theta, radius, visitor, ha='center', va='center', fontsize=5.25, fontweight='bold', color='#111827', bbox=dict(boxstyle="round,pad=0.1", fc="#FCA5A5", ec="white", lw=0.5, alpha=0.9), zorder=6)
 
     for rashi_idx, governors in ring2_governors.items():
         if not governors: continue
         ring2_rashi_filled[rashi_idx] = True
         theta = np.radians(((rashi_idx - 1) * 30 + 15 + inner_offset) % 360)
-        # Fontsize reduced to 75%: 11 -> 8.25
         ax.text(theta, 8.0, "-".join(governors), ha='center', va='center', fontsize=8.25, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#EF4444", ec="none", alpha=0.95), zorder=7)
 
     for t_str, l_val in time_markers:
@@ -448,7 +437,6 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
         if 90 < rot_deg <= 270: rot_deg += 180
         
         is_current = (t_str == f"{hour:02d}:{minute:02d}")
-        # Fontsize reduced to 75%: 9 -> 6.75, 5 -> 3.75
         f_size = 6.75 if is_current else 3.75 
         color_text = '#00CC96' if is_current else 'yellow'
         ax.text(theta, 11.3, f"L-{t_str}", ha='center', va='center', rotation=rot_deg, fontsize=f_size, fontweight='bold', color=color_text, bbox=dict(boxstyle="round,pad=0.15", fc="#1f2937", ec="none", alpha=0.9), zorder=5)
@@ -458,7 +446,6 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
         ax.plot([theta, theta], [9.5, 12.0], color='#F59E0B', lw=2, linestyle='--', zorder=4)
         rot_deg = (l_val + inner_offset) % 360
         if 90 < rot_deg <= 270: rot_deg += 180
-        # Fontsize reduced to 75%: 7 -> 5.25
         ax.text(theta, 11.8, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=5.25, fontweight='bold', color='yellow', bbox=dict(boxstyle="square,pad=0.1", fc="#2D3748", ec="yellow", lw=1.0, alpha=0.95), zorder=5)
 
     plt.tight_layout()
@@ -529,10 +516,18 @@ tithi_banner_placeholder.markdown(
 col_left, col_right = st.columns([6, 4], gap="large")
 
 with col_left:
-    header_col1, header_col2 = st.columns([3, 2])
-    with header_col1:
-        st.subheader(f"Astrolabe Mapping ({selected_time.strftime('%H:%M')})")
-    with header_col2:
+    st.subheader(f"Astrolabe Mapping ({selected_time.strftime('%H:%M')})")
+    
+    with st.spinner("Calculating Ephemeris..."):
+        fig = draw_circular_horoscope(
+            selected_date.year, selected_date.month, selected_date.day, 
+            selected_time.hour, selected_time.minute, lat, lon, tz_offset
+        )
+        st.pyplot(fig, use_container_width=True)
+        
+    # --- MOVED: 5-Minute Time Dropdown to Lower Left below the Chart ---
+    dropdown_col1, _ = st.columns([1, 1])
+    with dropdown_col1:
         time_options = [time(h, m) for h in range(24) for m in range(0, 60, 5)]
         
         rounded_min = 5 * (selected_time.minute // 5)
@@ -543,20 +538,13 @@ with col_left:
             t_idx = 0
             
         st.selectbox(
-            "Quick Select Time (5m)",
+            "Quick Select Time (5m intervals)",
             options=time_options,
             index=t_idx,
             format_func=lambda t: t.strftime("%H:%M"),
             key="time_dropdown",
             on_change=sync_time_from_dropdown
         )
-
-    with st.spinner("Calculating Ephemeris..."):
-        fig = draw_circular_horoscope(
-            selected_date.year, selected_date.month, selected_date.day, 
-            selected_time.hour, selected_time.minute, lat, lon, tz_offset
-        )
-        st.pyplot(fig, use_container_width=True)
         
     close_dt = datetime.combine(selected_date, close_t)
     trigger_dt = close_dt - timedelta(minutes=90)
