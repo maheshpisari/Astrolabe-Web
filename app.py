@@ -132,7 +132,7 @@ def get_planetary_positions(year, month, day, hour, minute, tz_offset):
     
     planets = {
         "SU": swe.SUN, "MO": swe.MOON, "MA": swe.MARS, "ME": swe.MERCURY, 
-        "JU": swe.JUPITER, "VE": swe.VENUS, "SA": SATURN, "RA": swe.MEAN_NODE
+        "JU": swe.JUPITER, "VE": swe.VENUS, "SA": swe.SATURN, "RA": swe.MEAN_NODE
     }
     positions = {}
     ra_exact_lon = 0
