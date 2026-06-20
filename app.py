@@ -202,7 +202,6 @@ def calculate_sector_scores(year, month, day, hour, minute, lat, lon, tz_offset)
 # ==========================================
 @st.cache_data(show_spinner=False)
 def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, close_t):
-    # Restricted to Market Hours
     start_t = datetime(year, month, day, open_t.hour, open_t.minute)
     end_t = datetime(year, month, day, close_t.hour, close_t.minute)
     
@@ -237,7 +236,6 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
         
     nifty_html = "<div style='display: flex; width: 100%; height: 25px; border-radius: 5px; overflow: hidden; border: 1px solid #444;'>" + "".join(nifty_html_parts) + "</div>"
     
-    # Label strictly for Market Hours span
     nifty_html += f"<div style='display: flex; justify-content: space-between; font-size: 12px; color: #aaa; margin-top: 4px; font-weight: bold;'>"
     nifty_html += f"<span>{open_t.strftime('%H:%M')} (Open)</span>"
     nifty_html += f"<span>Mid</span>"
@@ -281,18 +279,23 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
             prev_nl, prev_sl = curr_nl, curr_sl
         curr_m += timedelta(minutes=1)
 
-    fig = plt.figure(figsize=(16, 16), dpi=150) 
+    # UPDATED FIGSIZE: Reduced from 16x16 to 12x12 to shrink the height nicely on laptop screens
+    fig = plt.figure(figsize=(12, 12), dpi=150) 
     fig.patch.set_facecolor('#0e1117') 
     ax = fig.add_subplot(111, projection='polar')
     ax.set_facecolor('#0e1117')
     ax.set_theta_zero_location("N") 
     ax.set_theta_direction(1)       
     ax.axis('off')
-    ax.set_rmax(16.5)
+    
+    # UPDATED RMAX: Shrunk the bounding box slightly to prevent clipping
+    ax.set_rmax(13.8)
 
     theta_circle = np.linspace(0, 2 * np.pi, 500)
     ax.plot(theta_circle, np.full_like(theta_circle, 10), color='white', lw=2, zorder=3)
-    ax.plot(theta_circle, np.full_like(theta_circle, 14), color='white', lw=2, zorder=3)
+    
+    # SHRUNK OUTER RING: From 14 to 12.5
+    ax.plot(theta_circle, np.full_like(theta_circle, 12.5), color='white', lw=2, zorder=3)
 
     market_zones = [
         (0, "+ve stability in market", "#00CC96"), (30, "Accumulation, internal buying", "#636EFA"),
@@ -305,16 +308,16 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
 
     for angle in range(0, 360, 30):
         theta = np.radians(angle)
-        ax.plot([theta, theta], [10, 14], color='white', lw=1.5, zorder=2)
-        ax.text(theta, 14.5, f"{angle}°", ha='center', va='center', fontsize=14, fontweight='bold', color='white')
-        ax.text(np.radians(angle + 15), 15.5, str((angle // 30) + 1), ha='center', va='center', fontsize=22, fontweight='bold', color='white')
+        ax.plot([theta, theta], [10, 12.5], color='white', lw=1.5, zorder=2) # Shrunk line
+        ax.text(theta, 12.8, f"{angle}°", ha='center', va='center', fontsize=14, fontweight='bold', color='white') # Shrunk text radius
+        ax.text(np.radians(angle + 15), 13.3, str((angle // 30) + 1), ha='center', va='center', fontsize=22, fontweight='bold', color='white') # Shrunk text radius
 
     for start_deg, text, color in market_zones:
         center_deg = start_deg + 15
         theta = np.radians(center_deg)
         rot = center_deg
         if 90 < rot <= 270: rot += 180
-        ax.text(theta, 12.0, text, ha='center', va='center', fontsize=11, fontweight='bold', color=color, rotation=rot)
+        ax.text(theta, 11.2, text, ha='center', va='center', fontsize=11, fontweight='bold', color=color, rotation=rot) # Squeezed inward to 11.2
 
     ax.plot(theta_circle, np.full_like(theta_circle, 4), color='white', lw=1.5, zorder=3)
     ax.plot(theta_circle, np.full_like(theta_circle, 7), color='white', lw=1.5, zorder=3)
@@ -429,26 +432,42 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
         theta = np.radians(((rashi_idx - 1) * 30 + 15 + inner_offset) % 360)
         ax.text(theta, 8.5, "-".join(governors), ha='center', va='center', fontsize=11, fontweight='bold', color='white', bbox=dict(boxstyle="round,pad=0.15", fc="#EF4444", ec="none", alpha=0.95), zorder=7)
 
+    # ----------------------------------------------------
+    # UPDATE: FULL 24-HOUR TIME LABELS (YELLOW TEXT, SQUEEZED)
+    # ----------------------------------------------------
     for t_str, l_val in time_markers:
         theta = np.radians((l_val + inner_offset) % 360)
-        ax.plot([theta, theta], [10, 14], color='gray', lw=1.5, linestyle=':', zorder=4)
+        ax.plot([theta, theta], [10, 12.5], color='gray', lw=1.5, linestyle=':', zorder=4)
         rot_deg = (l_val + inner_offset) % 360
         if 90 < rot_deg <= 270: rot_deg += 180
         
         is_current = (t_str == f"{hour:02d}:{minute:02d}")
         f_size = 9 if is_current else 5 
-        color_text = '#00CC96' if is_current else 'white'
-        ax.text(theta, 13.0, f"L-{t_str}", ha='center', va='center', rotation=rot_deg, fontsize=f_size, fontweight='bold', color=color_text, bbox=dict(boxstyle="round,pad=0.15", fc="#1f2937", ec="none", alpha=0.9), zorder=5)
+        # Making the text vibrant yellow for high visibility
+        color_text = '#00CC96' if is_current else 'yellow'
+        # Text moved inward to radius 11.8
+        ax.text(theta, 11.8, f"L-{t_str}", ha='center', va='center', rotation=rot_deg, fontsize=f_size, fontweight='bold', color=color_text, bbox=dict(boxstyle="round,pad=0.15", fc="#1f2937", ec="none", alpha=0.9), zorder=5)
 
+    # ----------------------------------------------------
+    # UPDATE: NL/SL TRANSITIONS (YELLOW TEXT & BORDER)
+    # ----------------------------------------------------
     for l_val, transition_text in moon_transitions:
         theta = np.radians((l_val + inner_offset) % 360)
-        ax.plot([theta, theta], [10, 14], color='#F59E0B', lw=2, linestyle='--', zorder=4)
+        ax.plot([theta, theta], [10, 12.5], color='#F59E0B', lw=2, linestyle='--', zorder=4)
         rot_deg = (l_val + inner_offset) % 360
         if 90 < rot_deg <= 270: rot_deg += 180
-        ax.text(theta, 13.6, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=7, fontweight='bold', color='black', bbox=dict(boxstyle="square,pad=0.1", fc="white", ec="none", alpha=0.9), zorder=5)
+        # Text moved inward to radius 12.3. Using yellow text with dark grey bg for striking contrast
+        ax.text(theta, 12.3, transition_text, ha='center', va='center', rotation=rot_deg, fontsize=7, fontweight='bold', color='yellow', bbox=dict(boxstyle="square,pad=0.1", fc="#2D3748", ec="yellow", lw=1.0, alpha=0.95), zorder=5)
 
     plt.tight_layout()
     return fig
+
+# ==========================================
+# CALLBACKS & SYNCHRONIZATION
+# ==========================================
+def sync_time_from_dropdown():
+    # Sync the main slider whenever the dropdown changes
+    st.session_state.time_slider = st.session_state.time_dropdown
 
 # ==========================================
 # STREAMLIT UI (LAYOUT & DASHBOARD)
@@ -471,7 +490,7 @@ default_date, default_time = get_current_local_rounded(tz_offset)
 if "current_exchange" not in st.session_state:
     st.session_state.current_exchange = selected_exchange
 
-# Reset slider to market open if exchange changes to maintain proper bounds visually
+# Reset slider to market open if exchange changes to maintain proper bounds visually initially
 if st.session_state.current_exchange != selected_exchange:
     st.session_state.time_slider = open_t
     st.session_state.current_exchange = selected_exchange
@@ -516,7 +535,31 @@ tithi_banner_placeholder.markdown(
 col_left, col_right = st.columns([6, 4], gap="large")
 
 with col_left:
-    st.subheader(f"Astrolabe Mapping at {selected_time.strftime('%H:%M')} (Local Time)")
+    # Adding the synced Dropdown directly beside the Astrolabe Title
+    header_col1, header_col2 = st.columns([3, 2])
+    with header_col1:
+        st.subheader(f"Astrolabe Mapping ({selected_time.strftime('%H:%M')})")
+    with header_col2:
+        # Generate 5-min intervals for the dropdown
+        time_options = [time(h, m) for h in range(24) for m in range(0, 60, 5)]
+        
+        # Safely find the index of the currently selected time (rounded to nearest 5 mins)
+        rounded_min = 5 * (selected_time.minute // 5)
+        safe_time = time(selected_time.hour, rounded_min)
+        try:
+            t_idx = time_options.index(safe_time)
+        except ValueError:
+            t_idx = 0
+            
+        st.selectbox(
+            "Quick Select Time (5m)",
+            options=time_options,
+            index=t_idx,
+            format_func=lambda t: t.strftime("%H:%M"),
+            key="time_dropdown",
+            on_change=sync_time_from_dropdown
+        )
+
     with st.spinner("Calculating Ephemeris..."):
         fig = draw_circular_horoscope(
             selected_date.year, selected_date.month, selected_date.day, 
