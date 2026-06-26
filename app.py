@@ -207,13 +207,16 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
     end_t = datetime(year, month, day, close_t.hour, close_t.minute)
     
     nifty_html_parts = []
+    planet_count_html_parts = [] # NEW: Holds the cells for the 2nd row
     sector_html_parts = {s: [] for s in SECTORS.keys()}
     
     curr_t = start_t
     while curr_t <= end_t:
-        df_sectors, _, _ = calculate_sector_scores(year, month, day, curr_t.hour, curr_t.minute, lat, lon, tz_offset)
+        # Extract planets and lagna dynamically to count bullish/bearish planets
+        df_sectors, planet_positions, current_lagna = calculate_sector_scores(year, month, day, curr_t.hour, curr_t.minute, lat, lon, tz_offset)
         time_str = curr_t.strftime("%H:%M")
         
+        # 1. NIFTY TREND LOGIC
         banking = df_sectors[df_sectors["Sector"] == "Banking / Financials"].iloc[0]["Score"]
         it = df_sectors[df_sectors["Sector"] == "IT"].iloc[0]["Score"]
         energy = df_sectors[df_sectors["Sector"] == "Energy"].iloc[0]["Score"]
@@ -228,6 +231,37 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
         n_hover = f"{time_str} | True Score: {nifty_total}"
         nifty_html_parts.append(f"<div style='flex: 1; background-color: {n_color}; border-right: 1px solid #111;' title='{n_hover}'></div>")
         
+        # 2. NEW: PLANET HOUSE SEATING LOGIC (Counts per 5 min)
+        bullish_count = 0
+        bearish_count = 0
+        inner_offset = 30 - current_lagna
+        
+        for p_name, data in planet_positions.items():
+            shifted_deg = (data["deg"] + inner_offset) % 360
+            zone_idx = int(shifted_deg // 30)
+            if ZONE_SCORES[zone_idx] == 1:
+                bullish_count += 1
+            elif ZONE_SCORES[zone_idx] == -1:
+                bearish_count += 1
+                
+        if bullish_count > bearish_count:
+            bg_color = "#ccffcc" # Very light green
+            display_val = bullish_count
+        elif bearish_count > bullish_count:
+            bg_color = "#ffcccc" # Very light red
+            display_val = bearish_count
+        else:
+            bg_color = "#e0e0e0" # Very light gray for neutral/tie
+            display_val = bullish_count
+            
+        count_hover = f"{time_str} | Bullish: {bullish_count}, Bearish: {bearish_count}"
+        planet_count_html_parts.append(
+            f"<div style='flex: 1; background-color: {bg_color}; border-right: 1px solid #111; "
+            f"display: flex; align-items: center; justify-content: center; font-size: 10px; "
+            f"font-weight: bold; color: black;' title='{count_hover}'>{display_val}</div>"
+        )
+
+        # 3. SECTOR LOGIC
         for _, row in df_sectors.iterrows():
             s_color = "#00CC96" if row["Score"] >= 2 else "#EF553B" if row["Score"] <= -2 else "#2b2b2b"
             s_hover = f"{time_str} | Score: {row['Score']:+}"
@@ -235,7 +269,13 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
             
         curr_t += timedelta(minutes=5)
         
-    nifty_html = "<div style='display: flex; width: 100%; height: 25px; border-radius: 5px; overflow: hidden; border: 1px solid #444;'>" + "".join(nifty_html_parts) + "</div>"
+    # Combines Nifty Trend Row + Planet Count Row into a single connected Grid
+    nifty_html = (
+        "<div style='display: flex; flex-direction: column; width: 100%; border-radius: 5px; overflow: hidden; border: 1px solid #444;'>"
+        "<div style='display: flex; width: 100%; height: 25px;'>" + "".join(nifty_html_parts) + "</div>"
+        "<div style='display: flex; width: 100%; height: 20px; border-top: 1px solid #111;'>" + "".join(planet_count_html_parts) + "</div>"
+        "</div>"
+    )
     
     nifty_html += f"<div style='display: flex; justify-content: space-between; font-size: 12px; color: #aaa; margin-top: 4px; font-weight: bold;'>"
     nifty_html += f"<span>{open_t.strftime('%H:%M')} (Open)</span>"
@@ -605,7 +645,6 @@ with col_right:
     
     st.divider()
     
-    # --- 5-Minute Time Dropdown (Moved to abut Sector Scores) ---
     time_options = [time(h, m) for h in range(24) for m in range(0, 60, 5)]
     rounded_min = 5 * (selected_time.minute // 5)
     safe_time = time(selected_time.hour, rounded_min)
