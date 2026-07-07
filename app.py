@@ -605,7 +605,7 @@ with col_right:
     st.markdown("<br>", unsafe_allow_html=True)
     
     # --- ASTROLOGICAL MATRIX TABLE (EXACT MATCH) ---
-    st.markdown("### Astrological Matrix")
+    st.markdown("### Nature Of Zodiac Signs")
     table_html = """
     <table style="width:100%; border-collapse: collapse; font-size: 13px; text-align: center; border: 1px solid #ddd; margin-bottom: 20px;">
       <thead>
