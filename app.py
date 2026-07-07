@@ -604,68 +604,40 @@ with col_right:
     )
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # --- NEW: STATIC RASHI/PLANET INFO TABLE ADDED HERE ---
-    st.markdown("### Astrological References")
+    # --- ASTROLOGICAL MATRIX TABLE (EXACT MATCH) ---
+    st.markdown("### Astrological Matrix")
     table_html = """
     <table style="width:100%; border-collapse: collapse; font-size: 13px; text-align: center; border: 1px solid #ddd; margin-bottom: 20px;">
       <thead>
         <tr style="background-color: #333; color: white;">
-          <th style="border: 1px solid #ddd; padding: 6px;">Sign</th>
-          <th style="border: 1px solid #ddd; padding: 6px;">Element</th>
-          <th style="border: 1px solid #ddd; padding: 6px;">Lord</th>
-          <th style="border: 1px solid #ddd; padding: 6px;">Sign</th>
-          <th style="border: 1px solid #ddd; padding: 6px;">Element</th>
-          <th style="border: 1px solid #ddd; padding: 6px;">Lord</th>
+          <th style="border: 1px solid #ddd; padding: 8px;">Nature / Element</th>
+          <th style="border: 1px solid #ddd; padding: 8px;">🔥 FIRE</th>
+          <th style="border: 1px solid #ddd; padding: 8px;">🌍 EARTH</th>
+          <th style="border: 1px solid #ddd; padding: 8px;">💨 AIR</th>
+          <th style="border: 1px solid #ddd; padding: 8px;">💧 WATER</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td style="border: 1px solid #ddd; padding: 6px;">1</td>
-          <td style="background-color: #ffb3b3; color: black; border: 1px solid #ddd; padding: 6px;">F (Aries)</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">MARS</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">7</td>
-          <td style="background-color: #b3ffb3; color: black; border: 1px solid #ddd; padding: 6px;">A (Libra)</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">VENUS</td>
+          <td style="font-weight: bold; background-color: #f8f9fa; color: #333; border: 1px solid #ddd; padding: 8px;">Movable</td>
+          <td style="background-color: #ffcccc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>1</b><br>Aries<br><i>Mars</i></td>
+          <td style="background-color: #ffffcc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>10</b><br>Capricorn<br><i>Saturn</i></td>
+          <td style="background-color: #ccffcc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>7</b><br>Libra<br><i>Venus</i></td>
+          <td style="background-color: #cce5ff; color: #000; border: 1px solid #ddd; padding: 8px;"><b>4</b><br>Cancer<br><i>Moon</i></td>
         </tr>
         <tr>
-          <td style="border: 1px solid #ddd; padding: 6px;">2</td>
-          <td style="background-color: #ffffb3; color: black; border: 1px solid #ddd; padding: 6px;">E (Taurus)</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">VENUS</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">8</td>
-          <td style="background-color: #b3d9ff; color: black; border: 1px solid #ddd; padding: 6px;">W (Scorpio)</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">MARS</td>
+          <td style="font-weight: bold; background-color: #f8f9fa; color: #333; border: 1px solid #ddd; padding: 8px;">Fixed</td>
+          <td style="background-color: #ffcccc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>5</b><br>Leo<br><i>Sun</i></td>
+          <td style="background-color: #ffffcc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>2</b><br>Taurus<br><i>Venus</i></td>
+          <td style="background-color: #ccffcc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>11</b><br>Aquarius<br><i>Saturn</i></td>
+          <td style="background-color: #cce5ff; color: #000; border: 1px solid #ddd; padding: 8px;"><b>8</b><br>Scorpio<br><i>Mars</i></td>
         </tr>
         <tr>
-          <td style="border: 1px solid #ddd; padding: 6px;">3</td>
-          <td style="background-color: #b3ffb3; color: black; border: 1px solid #ddd; padding: 6px;">A (Gemini)</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">MERCURY</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">9</td>
-          <td style="background-color: #ffb3b3; color: black; border: 1px solid #ddd; padding: 6px;">F (Sagittarius)</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">JUPITER</td>
-        </tr>
-        <tr>
-          <td style="border: 1px solid #ddd; padding: 6px;">4</td>
-          <td style="background-color: #b3d9ff; color: black; border: 1px solid #ddd; padding: 6px;">W (Cancer)</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">MOON</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">10</td>
-          <td style="background-color: #ffffb3; color: black; border: 1px solid #ddd; padding: 6px;">E (Capricorn)</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">SATURN</td>
-        </tr>
-        <tr>
-          <td style="border: 1px solid #ddd; padding: 6px;">5</td>
-          <td style="background-color: #ffb3b3; color: black; border: 1px solid #ddd; padding: 6px;">F (Leo)</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">SUN</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">11</td>
-          <td style="background-color: #b3ffb3; color: black; border: 1px solid #ddd; padding: 6px;">A (Aquarius)</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">SATURN</td>
-        </tr>
-        <tr>
-          <td style="border: 1px solid #ddd; padding: 6px;">6</td>
-          <td style="background-color: #ffffb3; color: black; border: 1px solid #ddd; padding: 6px;">E (Virgo)</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">MERCURY</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">12</td>
-          <td style="background-color: #b3d9ff; color: black; border: 1px solid #ddd; padding: 6px;">W (Pisces)</td>
-          <td style="border: 1px solid #ddd; padding: 6px;">JUPITER</td>
+          <td style="font-weight: bold; background-color: #f8f9fa; color: #333; border: 1px solid #ddd; padding: 8px;">Dual</td>
+          <td style="background-color: #ffcccc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>9</b><br>Sagittarius<br><i>Jupiter</i></td>
+          <td style="background-color: #ffffcc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>6</b><br>Virgo<br><i>Mercury</i></td>
+          <td style="background-color: #ccffcc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>3</b><br>Gemini<br><i>Mercury</i></td>
+          <td style="background-color: #cce5ff; color: #000; border: 1px solid #ddd; padding: 8px;"><b>12</b><br>Pisces<br><i>Jupiter</i></td>
         </tr>
       </tbody>
     </table>
