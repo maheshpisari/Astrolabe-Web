@@ -207,16 +207,14 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
     end_t = datetime(year, month, day, close_t.hour, close_t.minute)
     
     nifty_html_parts = []
-    planet_count_html_parts = [] # NEW: Holds the cells for the 2nd row
+    planet_count_html_parts = []
     sector_html_parts = {s: [] for s in SECTORS.keys()}
     
     curr_t = start_t
     while curr_t <= end_t:
-        # Extract planets and lagna dynamically to count bullish/bearish planets
         df_sectors, planet_positions, current_lagna = calculate_sector_scores(year, month, day, curr_t.hour, curr_t.minute, lat, lon, tz_offset)
         time_str = curr_t.strftime("%H:%M")
         
-        # 1. NIFTY TREND LOGIC
         banking = df_sectors[df_sectors["Sector"] == "Banking / Financials"].iloc[0]["Score"]
         it = df_sectors[df_sectors["Sector"] == "IT"].iloc[0]["Score"]
         energy = df_sectors[df_sectors["Sector"] == "Energy"].iloc[0]["Score"]
@@ -231,7 +229,6 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
         n_hover = f"{time_str} | True Score: {nifty_total}"
         nifty_html_parts.append(f"<div style='flex: 1; background-color: {n_color}; border-right: 1px solid #111;' title='{n_hover}'></div>")
         
-        # 2. NEW: PLANET HOUSE SEATING LOGIC (Counts per 5 min)
         bullish_count = 0
         bearish_count = 0
         inner_offset = 30 - current_lagna
@@ -245,13 +242,13 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
                 bearish_count += 1
                 
         if bullish_count > bearish_count:
-            bg_color = "#ccffcc" # Very light green
+            bg_color = "#ccffcc"
             display_val = bullish_count
         elif bearish_count > bullish_count:
-            bg_color = "#ffcccc" # Very light red
+            bg_color = "#ffcccc"
             display_val = bearish_count
         else:
-            bg_color = "#e0e0e0" # Very light gray for neutral/tie
+            bg_color = "#e0e0e0"
             display_val = bullish_count
             
         count_hover = f"{time_str} | Bullish: {bullish_count}, Bearish: {bearish_count}"
@@ -261,7 +258,6 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
             f"font-weight: bold; color: black;' title='{count_hover}'>{display_val}</div>"
         )
 
-        # 3. SECTOR LOGIC
         for _, row in df_sectors.iterrows():
             s_color = "#00CC96" if row["Score"] >= 2 else "#EF553B" if row["Score"] <= -2 else "#2b2b2b"
             s_hover = f"{time_str} | Score: {row['Score']:+}"
@@ -269,7 +265,6 @@ def generate_all_trends_html(year, month, day, lat, lon, tz_offset, open_t, clos
             
         curr_t += timedelta(minutes=5)
         
-    # Combines Nifty Trend Row + Planet Count Row into a single connected Grid
     nifty_html = (
         "<div style='display: flex; flex-direction: column; width: 100%; border-radius: 5px; overflow: hidden; border: 1px solid #444;'>"
         "<div style='display: flex; width: 100%; height: 25px;'>" + "".join(nifty_html_parts) + "</div>"
@@ -608,6 +603,75 @@ with col_right:
         f"| **{', '.join(bullish_planets) if bullish_planets else '-'}** | **{', '.join(bearish_planets) if bearish_planets else '-'}** |"
     )
     st.markdown("<br>", unsafe_allow_html=True)
+    
+    # --- NEW: STATIC RASHI/PLANET INFO TABLE ADDED HERE ---
+    st.markdown("### Astrological References")
+    table_html = """
+    <table style="width:100%; border-collapse: collapse; font-size: 13px; text-align: center; border: 1px solid #ddd; margin-bottom: 20px;">
+      <thead>
+        <tr style="background-color: #333; color: white;">
+          <th style="border: 1px solid #ddd; padding: 6px;">Sign</th>
+          <th style="border: 1px solid #ddd; padding: 6px;">Element</th>
+          <th style="border: 1px solid #ddd; padding: 6px;">Lord</th>
+          <th style="border: 1px solid #ddd; padding: 6px;">Sign</th>
+          <th style="border: 1px solid #ddd; padding: 6px;">Element</th>
+          <th style="border: 1px solid #ddd; padding: 6px;">Lord</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 6px;">1</td>
+          <td style="background-color: #ffb3b3; color: black; border: 1px solid #ddd; padding: 6px;">F (Aries)</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">MARS</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">7</td>
+          <td style="background-color: #b3ffb3; color: black; border: 1px solid #ddd; padding: 6px;">A (Libra)</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">VENUS</td>
+        </tr>
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 6px;">2</td>
+          <td style="background-color: #ffffb3; color: black; border: 1px solid #ddd; padding: 6px;">E (Taurus)</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">VENUS</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">8</td>
+          <td style="background-color: #b3d9ff; color: black; border: 1px solid #ddd; padding: 6px;">W (Scorpio)</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">MARS</td>
+        </tr>
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 6px;">3</td>
+          <td style="background-color: #b3ffb3; color: black; border: 1px solid #ddd; padding: 6px;">A (Gemini)</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">MERCURY</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">9</td>
+          <td style="background-color: #ffb3b3; color: black; border: 1px solid #ddd; padding: 6px;">F (Sagittarius)</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">JUPITER</td>
+        </tr>
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 6px;">4</td>
+          <td style="background-color: #b3d9ff; color: black; border: 1px solid #ddd; padding: 6px;">W (Cancer)</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">MOON</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">10</td>
+          <td style="background-color: #ffffb3; color: black; border: 1px solid #ddd; padding: 6px;">E (Capricorn)</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">SATURN</td>
+        </tr>
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 6px;">5</td>
+          <td style="background-color: #ffb3b3; color: black; border: 1px solid #ddd; padding: 6px;">F (Leo)</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">SUN</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">11</td>
+          <td style="background-color: #b3ffb3; color: black; border: 1px solid #ddd; padding: 6px;">A (Aquarius)</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">SATURN</td>
+        </tr>
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 6px;">6</td>
+          <td style="background-color: #ffffb3; color: black; border: 1px solid #ddd; padding: 6px;">E (Virgo)</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">MERCURY</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">12</td>
+          <td style="background-color: #b3d9ff; color: black; border: 1px solid #ddd; padding: 6px;">W (Pisces)</td>
+          <td style="border: 1px solid #ddd; padding: 6px;">JUPITER</td>
+        </tr>
+      </tbody>
+    </table>
+    """
+    st.markdown(table_html, unsafe_allow_html=True)
+    # ---------------------------------------------------------
     
     st.subheader(f"Intraday Live Scoring ({ticker})")
     
