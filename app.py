@@ -137,7 +137,7 @@ def get_planetary_positions(year, month, day, hour, minute, tz_offset):
     positions = {}
     ra_exact_lon = 0
     for name, p_id in planets.items():
-        if p_id is None: p_id = swe.SATURN # Fallback logic safety
+        if p_id is None: p_id = swe.SATURN 
         pos, _ = swe.calc_ut(jd, p_id, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
         lon = pos[0]
         if name == "RA": ra_exact_lon = lon
@@ -604,45 +604,65 @@ with col_right:
     )
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # --- ASTROLOGICAL MATRIX TABLE (EXACT MATCH) ---
-    st.markdown("### Nature Of Zodiac Signs")
+    # --- ASTROLOGICAL MATRIX TABLE ---
+    st.markdown("### Astrological Matrix")
     table_html = """
-    <table style="width:100%; border-collapse: collapse; font-size: 13px; text-align: center; border: 1px solid #ddd; margin-bottom: 20px;">
+    <table style="width:100%; border-collapse: collapse; font-size: 13px; font-weight: bold; line-height: 1.2; text-align: center; border: 1px solid #ddd; margin-bottom: 20px;">
       <thead>
         <tr style="background-color: #333; color: white;">
-          <th style="border: 1px solid #ddd; padding: 8px;">Nature / Element</th>
-          <th style="border: 1px solid #ddd; padding: 8px;">🔥 FIRE</th>
-          <th style="border: 1px solid #ddd; padding: 8px;">🌍 EARTH</th>
-          <th style="border: 1px solid #ddd; padding: 8px;">💨 AIR</th>
-          <th style="border: 1px solid #ddd; padding: 8px;">💧 WATER</th>
+          <th style="border: 1px solid #ddd; padding: 4px;">Nature / Element</th>
+          <th style="border: 1px solid #ddd; padding: 4px;">🔥 FIRE</th>
+          <th style="border: 1px solid #ddd; padding: 4px;">🌍 EARTH</th>
+          <th style="border: 1px solid #ddd; padding: 4px;">💨 AIR</th>
+          <th style="border: 1px solid #ddd; padding: 4px;">💧 WATER</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td style="font-weight: bold; background-color: #f8f9fa; color: #333; border: 1px solid #ddd; padding: 8px;">Movable</td>
-          <td style="background-color: #ffcccc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>1</b><br>Aries<br><i>Mars</i></td>
-          <td style="background-color: #ffffcc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>10</b><br>Capricorn<br><i>Saturn</i></td>
-          <td style="background-color: #ccffcc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>7</b><br>Libra<br><i>Venus</i></td>
-          <td style="background-color: #cce5ff; color: #000; border: 1px solid #ddd; padding: 8px;"><b>4</b><br>Cancer<br><i>Moon</i></td>
+          <td style="background-color: #f8f9fa; color: #333; border: 1px solid #ddd; padding: 4px;">Movable</td>
+          <td style="background-color: #ffcccc; color: #000; border: 1px solid #ddd; padding: 4px;">1<br>Aries<br><i>Mars</i></td>
+          <td style="background-color: #ffffcc; color: #000; border: 1px solid #ddd; padding: 4px;">10<br>Capricorn<br><i>Saturn</i></td>
+          <td style="background-color: #ccffcc; color: #000; border: 1px solid #ddd; padding: 4px;">7<br>Libra<br><i>Venus</i></td>
+          <td style="background-color: #cce5ff; color: #000; border: 1px solid #ddd; padding: 4px;">4<br>Cancer<br><i>Moon</i></td>
         </tr>
         <tr>
-          <td style="font-weight: bold; background-color: #f8f9fa; color: #333; border: 1px solid #ddd; padding: 8px;">Fixed</td>
-          <td style="background-color: #ffcccc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>5</b><br>Leo<br><i>Sun</i></td>
-          <td style="background-color: #ffffcc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>2</b><br>Taurus<br><i>Venus</i></td>
-          <td style="background-color: #ccffcc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>11</b><br>Aquarius<br><i>Saturn</i></td>
-          <td style="background-color: #cce5ff; color: #000; border: 1px solid #ddd; padding: 8px;"><b>8</b><br>Scorpio<br><i>Mars</i></td>
+          <td style="background-color: #f8f9fa; color: #333; border: 1px solid #ddd; padding: 4px;">Fixed</td>
+          <td style="background-color: #ffcccc; color: #000; border: 1px solid #ddd; padding: 4px;">5<br>Leo<br><i>Sun</i></td>
+          <td style="background-color: #ffffcc; color: #000; border: 1px solid #ddd; padding: 4px;">2<br>Taurus<br><i>Venus</i></td>
+          <td style="background-color: #ccffcc; color: #000; border: 1px solid #ddd; padding: 4px;">11<br>Aquarius<br><i>Saturn</i></td>
+          <td style="background-color: #cce5ff; color: #000; border: 1px solid #ddd; padding: 4px;">8<br>Scorpio<br><i>Mars</i></td>
         </tr>
         <tr>
-          <td style="font-weight: bold; background-color: #f8f9fa; color: #333; border: 1px solid #ddd; padding: 8px;">Dual</td>
-          <td style="background-color: #ffcccc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>9</b><br>Sagittarius<br><i>Jupiter</i></td>
-          <td style="background-color: #ffffcc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>6</b><br>Virgo<br><i>Mercury</i></td>
-          <td style="background-color: #ccffcc; color: #000; border: 1px solid #ddd; padding: 8px;"><b>3</b><br>Gemini<br><i>Mercury</i></td>
-          <td style="background-color: #cce5ff; color: #000; border: 1px solid #ddd; padding: 8px;"><b>12</b><br>Pisces<br><i>Jupiter</i></td>
+          <td style="background-color: #f8f9fa; color: #333; border: 1px solid #ddd; padding: 4px;">Dual</td>
+          <td style="background-color: #ffcccc; color: #000; border: 1px solid #ddd; padding: 4px;">9<br>Sagittarius<br><i>Jupiter</i></td>
+          <td style="background-color: #ffffcc; color: #000; border: 1px solid #ddd; padding: 4px;">6<br>Virgo<br><i>Mercury</i></td>
+          <td style="background-color: #ccffcc; color: #000; border: 1px solid #ddd; padding: 4px;">3<br>Gemini<br><i>Mercury</i></td>
+          <td style="background-color: #cce5ff; color: #000; border: 1px solid #ddd; padding: 4px;">12<br>Pisces<br><i>Jupiter</i></td>
         </tr>
       </tbody>
     </table>
     """
     st.markdown(table_html, unsafe_allow_html=True)
+    # ---------------------------------------------------------
+
+    # --- MOVED: 5-Minute Time Dropdown ---
+    time_options = [time(h, m) for h in range(24) for m in range(0, 60, 5)]
+    rounded_min = 5 * (selected_time.minute // 5)
+    safe_time = time(selected_time.hour, rounded_min)
+    try:
+        t_idx = time_options.index(safe_time)
+    except ValueError:
+        t_idx = 0
+        
+    st.selectbox(
+        "⏱️ Quick Select Time (5m intervals)",
+        options=time_options,
+        index=t_idx,
+        format_func=lambda t: t.strftime("%H:%M"),
+        key="time_dropdown",
+        on_change=sync_time_from_dropdown
+    )
+    st.markdown("<br>", unsafe_allow_html=True)
     # ---------------------------------------------------------
     
     st.subheader(f"Intraday Live Scoring ({ticker})")
@@ -680,23 +700,6 @@ with col_right:
         st.warning(f"⚖️ **CHOPPY / NEUTRAL**\n\n{ticker} True Score: **0**\n\nPlanets and Star Lords are completely contradicting each other.")
     
     st.divider()
-    
-    time_options = [time(h, m) for h in range(24) for m in range(0, 60, 5)]
-    rounded_min = 5 * (selected_time.minute // 5)
-    safe_time = time(selected_time.hour, rounded_min)
-    try:
-        t_idx = time_options.index(safe_time)
-    except ValueError:
-        t_idx = 0
-        
-    st.selectbox(
-        "⏱️ Quick Select Time (5m intervals)",
-        options=time_options,
-        index=t_idx,
-        format_func=lambda t: t.strftime("%H:%M"),
-        key="time_dropdown",
-        on_change=sync_time_from_dropdown
-    )
     
     st.markdown(f"### Individual Sector True Scores ({ticker} Market Hours)")
     st.caption("Score incorporates Planet Zone + Nakshatra Lord Zone. ±2 required for strong conviction.")
