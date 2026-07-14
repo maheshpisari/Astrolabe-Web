@@ -558,7 +558,7 @@ with col_left:
             selected_date.year, selected_date.month, selected_date.day, 
             selected_time.hour, selected_time.minute, lat, lon, tz_offset
         )
-        st.pyplot(fig, use_container_width=True)
+        st.pyplot(fig, width='stretch')
         
     close_dt = datetime.combine(selected_date, close_t)
     trigger_dt = close_dt - timedelta(minutes=90)
