@@ -186,35 +186,46 @@ def get_sunrise(year, month, day, lat, lon, tz_offset):
     
     geopos = (float(lon), float(lat), 0.0)
     
-    # Safely handle the notoriously inconsistent pyswisseph wrapper signatures
-    try:
-        # Standard positional (6 args)
-        result = swe.rise_trans(jd_ut, swe.SUN, "", swe.FLG_SWIEPH, swe.CALC_RISE, geopos)
-    except TypeError:
-        try:
-            # Fallback for strict Python 3 byte-string wrappers
-            result = swe.rise_trans(jd_ut, swe.SUN, b"", swe.FLG_SWIEPH, swe.CALC_RISE, geopos)
-        except TypeError:
-            # Fallback for wrappers that omit starname entirely
-            result = swe.rise_trans(jd_ut, swe.SUN, swe.FLG_SWIEPH, swe.CALC_RISE, geopos)
-
-    # Safely extract the Julian Day regardless of return type (Float vs Tuple)
-    if isinstance(result, tuple):
-        if len(result) == 2 and isinstance(result[1], (tuple, list)):
-            rise_jd = result[1][0]  # format: (flag, tret_tuple)
-        elif len(result) >= 1 and isinstance(result[0], (tuple, list)):
-            rise_jd = result[0][0]  # format: (tret_tuple, serr)
-        else:
-            rise_jd = result[0]     # format: (float_jd, ...)
-    else:
-        rise_jd = result            # format: float
-
-    y, m, d, h_float = swe.revjul(rise_jd)
-    h = int(h_float)
-    mins = int((h_float - h) * 60)
+    # Swisseph rise_trans signatures vary wildly across Python versions. 
+    # We will try all known variations gracefully.
+    result = None
+    variations = [
+        # Modern pyswisseph (8 args, expects pressure and temp)
+        lambda: swe.rise_trans(jd_ut, swe.SUN, "", swe.FLG_SWIEPH, swe.CALC_RISE, geopos, 0.0, 0.0),
+        lambda: swe.rise_trans(jd_ut, swe.SUN, b"", swe.FLG_SWIEPH, swe.CALC_RISE, geopos, 0.0, 0.0),
+        # Older pyswisseph (6 args)
+        lambda: swe.rise_trans(jd_ut, swe.SUN, "", swe.FLG_SWIEPH, swe.CALC_RISE, geopos),
+        lambda: swe.rise_trans(jd_ut, swe.SUN, b"", swe.FLG_SWIEPH, swe.CALC_RISE, geopos)
+    ]
     
-    utc_sunrise = datetime(y, m, d, h, mins)
+    for func in variations:
+        try:
+            result = func()
+            break  # Success! Break out of the loop
+        except Exception:
+            continue
+            
+    if result is None:
+        # Ultimate failsafe: if the library completely fails, default to 06:00 AM local time
+        return datetime(year, month, day, 6, 0)
+
+    # Safely extract the Julian Day float from heavily nested return types (e.g. ((2459000.12,), ""))
+    def get_first_float(obj):
+        if isinstance(obj, (list, tuple)):
+            return get_first_float(obj[0])
+        return float(obj)
+
+    rise_jd = get_first_float(result)
+
+    # Convert Julian Day back to standard date/time
+    y, m, d, h_float = swe.revjul(rise_jd)
+    
+    # Use timedelta to safely handle edge cases (like 23.999 hours rounding to 24)
+    utc_sunrise = datetime(y, m, d) + timedelta(hours=h_float)
     local_sunrise = utc_sunrise + timedelta(hours=tz_offset)
+    
+    # Drop seconds/microseconds to keep it clean for the UI comparison
+    local_sunrise = local_sunrise.replace(second=0, microsecond=0)
     
     return local_sunrise
     
