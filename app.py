@@ -228,6 +228,46 @@ def get_sunrise(year, month, day, lat, lon, tz_offset):
     local_sunrise = local_sunrise.replace(second=0, microsecond=0)
     
     return local_sunrise
+
+def get_sunset(year, month, day, lat, lon, tz_offset):
+    # Convert midnight local time to UTC to begin the ephemeris search
+    dt_local = datetime(year, month, day, 0, 0)
+    dt_utc = dt_local - timedelta(hours=tz_offset)
+    jd_ut = swe.julday(dt_utc.year, dt_utc.month, dt_utc.day, dt_utc.hour)
+    
+    geopos = (float(lon), float(lat), 0.0)
+    
+    result = None
+    variations = [
+        # swe.CALC_SET triggers the sunset calculation
+        lambda: swe.rise_trans(jd_ut, swe.SUN, "", swe.FLG_SWIEPH, swe.CALC_SET, geopos, 0.0, 0.0),
+        lambda: swe.rise_trans(jd_ut, swe.SUN, b"", swe.FLG_SWIEPH, swe.CALC_SET, geopos, 0.0, 0.0),
+        lambda: swe.rise_trans(jd_ut, swe.SUN, "", swe.FLG_SWIEPH, swe.CALC_SET, geopos),
+        lambda: swe.rise_trans(jd_ut, swe.SUN, b"", swe.FLG_SWIEPH, swe.CALC_SET, geopos)
+    ]
+    
+    for func in variations:
+        try:
+            result = func()
+            break
+        except Exception:
+            continue
+            
+    if result is None:
+        return datetime(year, month, day, 18, 0)
+
+    def get_first_float(obj):
+        if isinstance(obj, (list, tuple)):
+            return get_first_float(obj[0])
+        return float(obj)
+
+    set_jd = get_first_float(result)
+
+    y, m, d, h_float = swe.revjul(set_jd)
+    utc_sunset = datetime(y, m, d) + timedelta(hours=h_float)
+    local_sunset = utc_sunset + timedelta(hours=tz_offset)
+    
+    return local_sunset.replace(second=0, microsecond=0)
     
 def get_jd(year, month, day, hour, minute, tz_offset):
     local_time = datetime(year, month, day, hour, minute)
@@ -758,35 +798,59 @@ with col_right:
     with p_col1:
         st.markdown("### 🕉️ Daily Panchang & Hora")
         
-        # --- 1. ASTROLOGICAL HORA CALCULATION (DYNAMIC SUNRISE) ---
+        # --- 1. ASTROLOGICAL HORA CALCULATION (TRUE VEDIC UNEQUAL HORAS) ---
         HORA_PLANETS = ["Sun", "Venus", "Mercury", "Moon", "Saturn", "Jupiter", "Mars"]
-        # Day of week start index (Mon=3, Tue=6, Wed=2, Thu=5, Fri=1, Sat=4, Sun=0)
+        # Python weekday mapping to Chaldean Hora sequence start index (Mon=3, Tue=6, Wed=2, Thu=5, Fri=1, Sat=4, Sun=0)
         DAY_START_IDX = {0: 3, 1: 6, 2: 2, 3: 5, 4: 1, 5: 4, 6: 0}
         
         current_dt = datetime.combine(selected_date, selected_time)
-        today_sunrise = get_sunrise(selected_date.year, selected_date.month, selected_date.day, lat, lon, tz_offset)
         
-        # If current time is before today's sunrise, we are technically in yesterday's astrological day
-        if current_dt < today_sunrise:
-            astro_date = selected_date - timedelta(days=1)
-            astro_sunrise = get_sunrise(astro_date.year, astro_date.month, astro_date.day, lat, lon, tz_offset)
-        else:
-            astro_date = selected_date
-            astro_sunrise = today_sunrise
+        # Helper function to generate exactly accurate Vedic Horas spanning a 3-day window 
+        # (This guarantees we never hit a boundary error near midnight)
+        def get_3_day_horas(target_dt, lat, lon, tz_offset):
+            base_date = target_dt.date()
+            all_horas = []
             
-        hours_since_sunrise = int((current_dt - astro_sunrise).total_seconds() // 3600)
-        start_idx = DAY_START_IDX[astro_date.weekday()]
-        
-        def get_hora_info(offset_hours):
-            target_hours = hours_since_sunrise + offset_hours
-            p_idx = (start_idx + target_hours) % 7
-            h_start = astro_sunrise + timedelta(hours=target_hours)
-            h_end = h_start + timedelta(hours=1)
-            return HORA_PLANETS[p_idx], h_start.strftime("%H:%M"), h_end.strftime("%H:%M")
+            for d_offset in [-1, 0, 1]:  # Generate for Yesterday, Today, Tomorrow
+                iter_date = base_date + timedelta(days=d_offset)
+                
+                # 1. Get exact anchors
+                s_rise = get_sunrise(iter_date.year, iter_date.month, iter_date.day, lat, lon, tz_offset)
+                s_set = get_sunset(iter_date.year, iter_date.month, iter_date.day, lat, lon, tz_offset)
+                
+                next_date = iter_date + timedelta(days=1)
+                next_s_rise = get_sunrise(next_date.year, next_date.month, next_date.day, lat, lon, tz_offset)
+                
+                # 2. Divide Day and Night exactly by 12
+                day_dur = (s_set - s_rise) / 12
+                night_dur = (next_s_rise - s_set) / 12
+                
+                start_idx = DAY_START_IDX[iter_date.weekday()]
+                curr_time = s_rise
+                
+                # 3. Create the 24 intervals
+                for i in range(24):
+                    p_idx = (start_idx + i) % 7
+                    planet = HORA_PLANETS[p_idx]
+                    
+                    end_time = curr_time + day_dur if i < 12 else curr_time + night_dur
+                    all_horas.append((planet, curr_time, end_time))
+                    curr_time = end_time
+                    
+            return all_horas
 
-        prev_p, prev_s, prev_e = get_hora_info(-1)
-        curr_p, curr_s, curr_e = get_hora_info(0)
-        next_p, next_s, next_e = get_hora_info(1)
+        all_horas = get_3_day_horas(current_dt, lat, lon, tz_offset)
+
+        # Scan the generated timeline to find exactly which Hora we are inside right now
+        active_idx = 0
+        for i, (p, s, e) in enumerate(all_horas):
+            if s <= current_dt < e:
+                active_idx = i
+                break
+
+        prev_p, prev_s, prev_e = all_horas[active_idx - 1]
+        curr_p, curr_s, curr_e = all_horas[active_idx]
+        next_p, next_s, next_e = all_horas[active_idx + 1]
 
         # Hora Table HTML
         hora_html = f"""
@@ -797,9 +861,9 @@ with col_right:
                 <th style='border: 1px solid #ccc; padding: 6px; color: #F59E0B;'>⏭️ Next Hora</th>
             </tr>
             <tr style='background-color: #ffffff; color: #000; font-weight: bold;'>
-                <td style='border: 1px solid #ccc; padding: 6px;'>{prev_p}<br><span style='font-size: 11px; font-weight: normal; color: #666;'>{prev_s} - {prev_e}</span></td>
-                <td style='border: 1px solid #ccc; padding: 6px; font-size: 14px;'>{curr_p}<br><span style='font-size: 11px; font-weight: bold; color: #000;'>{curr_s} - {curr_e}</span></td>
-                <td style='border: 1px solid #ccc; padding: 6px;'>{next_p}<br><span style='font-size: 11px; font-weight: normal; color: #666;'>{next_s} - {next_e}</span></td>
+                <td style='border: 1px solid #ccc; padding: 6px;'>{prev_p}<br><span style='font-size: 11px; font-weight: normal; color: #666;'>{prev_s.strftime("%H:%M")} - {prev_e.strftime("%H:%M")}</span></td>
+                <td style='border: 1px solid #ccc; padding: 6px; font-size: 14px;'>{curr_p}<br><span style='font-size: 11px; font-weight: bold; color: #000;'>{curr_s.strftime("%H:%M")} - {curr_e.strftime("%H:%M")}</span></td>
+                <td style='border: 1px solid #ccc; padding: 6px;'>{next_p}<br><span style='font-size: 11px; font-weight: normal; color: #666;'>{next_s.strftime("%H:%M")} - {next_e.strftime("%H:%M")}</span></td>
             </tr>
         </table>
         """
