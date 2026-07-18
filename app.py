@@ -137,7 +137,7 @@ def calculate_panchang_at(jd):
     }
 
 @st.cache_data(show_spinner=False)
-def get_daily_panchang(year, month, day, tz_offset):
+def get_panchang_timeline(year, month, day, tz_offset):
     start_t = datetime(year, month, day, 0, 0)
     end_t = datetime(year, month, day, 23, 59)
     
@@ -147,7 +147,8 @@ def get_daily_panchang(year, month, day, tz_offset):
     jd = swe.julday(curr_t.year, curr_t.month, curr_t.day, curr_t.hour + curr_t.minute/60.0 - tz_offset)
     initial_p = calculate_panchang_at(jd)
     
-    changes = {k: [] for k in initial_p.keys()}
+    # Store the timeline of transitions starting from 00:00
+    timelines = {k: [(time(0, 0), initial_p[k])] for k in initial_p.keys()}
     current_p = initial_p.copy()
     
     curr_t += timedelta(minutes=5)
@@ -157,12 +158,12 @@ def get_daily_panchang(year, month, day, tz_offset):
         
         for key in current_p:
             if new_p[key] != current_p[key]:
-                changes[key].append((new_p[key], curr_t.strftime("%H:%M")))
+                timelines[key].append((curr_t.time(), new_p[key]))
                 current_p[key] = new_p[key]
                 
         curr_t += timedelta(minutes=5)
         
-    return vara, initial_p, changes
+    return vara, timelines
 
 # ==========================================
 # CORE CALCULATION FUNCTIONS
@@ -683,10 +684,9 @@ with col_right:
     p_col1, p_col2 = st.columns([1.7, 1], gap="small")
     
     with p_col1:
-        st.markdown("### 🕉️ Daily Panchang")
-        vara, initial_p, p_changes = get_daily_panchang(selected_date.year, selected_date.month, selected_date.day, tz_offset)
+        st.markdown("### 🕉️ Daily Panchang Timeline")
+        vara, timelines = get_panchang_timeline(selected_date.year, selected_date.month, selected_date.day, tz_offset)
         
-        # Construct the 2x6 Table dynamically with updated White Background, Bold Text, and +2px font size
         panchang_html = f"""
         <table style='width:100%; border-collapse: collapse; font-size: 13px; font-weight: bold; text-align: center; border: 1px solid #ccc; background-color: white;'>
             <tr style='background-color: #f8f9fa; color: #000000;'>
@@ -702,11 +702,40 @@ with col_right:
         """
         
         for key in ["Nakshatra", "Pada", "Tithi", "Yoga", "Karana"]:
-            val_str = initial_p[key]
-            if p_changes[key]:
-                # Bullet points font size also increased to 12px, color darkened to #D97706 for contrast on white
-                val_str += "<br><br>" + "".join([f"<span style='color:#D97706; font-size:12px; font-weight:900;'>• {v} @ {t}</span><br>" for v, t in p_changes[key]])
-            panchang_html += f"<td style='border: 1px solid #ccc; padding: 6px;'>{val_str}</td>"
+            timeline = timelines[key]
+            
+            # 1. Determine which timeline item is currently "active" based on the slider time
+            active_idx = 0
+            for i, (t_val, _) in enumerate(timeline):
+                if selected_time >= t_val:
+                    active_idx = i
+            
+            # 2. Build the cell HTML looping through the day's timeline
+            cell_html = ""
+            for i, (t_val, val) in enumerate(timeline):
+                t_str = "00:00" if i == 0 else t_val.strftime("%H:%M")
+                
+                if i < active_idx:
+                    # PAST (Red)
+                    color = "#EF4444"
+                    status = f"Ended {t_str}" if i > 0 else "Started 00:00"
+                    cell_html += f"<div style='color: {color}; padding: 4px 0;'><span style='font-size: 11px; font-weight: normal;'>{status}</span><br>{val}</div>"
+                elif i == active_idx:
+                    # PRESENT (Black & Bolder)
+                    color = "#000000"
+                    status = f"Running (Since {t_str})"
+                    cell_html += f"<div style='color: {color}; font-size: 14px; font-weight: 900; padding: 6px 0;'><span style='font-size: 11px; font-weight: bold; color: #444;'>👉 {status}</span><br>{val}</div>"
+                else:
+                    # FUTURE (Orange)
+                    color = "#F59E0B"
+                    status = f"Upcoming @ {t_str}"
+                    cell_html += f"<div style='color: {color}; padding: 4px 0;'><span style='font-size: 11px; font-weight: normal;'>{status}</span><br>{val}</div>"
+                
+                # Add a light dotted divider between timeline events if there are multiple
+                if i < len(timeline) - 1:
+                    cell_html += "<hr style='margin: 2px 0; border: 0; border-top: 1px dotted #ccc;'>"
+                    
+            panchang_html += f"<td style='border: 1px solid #ccc; padding: 4px;'>{cell_html}</td>"
             
         panchang_html += "</tr></table><br>"
         st.markdown(panchang_html, unsafe_allow_html=True)
