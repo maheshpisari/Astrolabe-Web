@@ -725,7 +725,56 @@ with col_right:
     p_col1, p_col2 = st.columns([1.7, 1], gap="small")
     
     with p_col1:
-        st.markdown("### 🕉️ Daily Panchang Timeline")
+        st.markdown("### 🕉️ Daily Panchang & Hora")
+        
+        # --- 1. ASTROLOGICAL HORA CALCULATION (SUNRISE DYNAMIC) ---
+        HORA_PLANETS = ["Sun", "Venus", "Mercury", "Moon", "Saturn", "Jupiter", "Mars"]
+        # Python weekday mapping to Chaldean Hora sequence start index (Mon=3, Tue=6, Wed=2, Thu=5, Fri=1, Sat=4, Sun=0)
+        DAY_START_IDX = {0: 3, 1: 6, 2: 2, 3: 5, 4: 1, 5: 4, 6: 0}
+        
+        current_dt = datetime.combine(selected_date, selected_time)
+        today_sunrise = get_sunrise(selected_date.year, selected_date.month, selected_date.day, lat, lon, tz_offset)
+        
+        # If current time is before today's sunrise, we are technically in yesterday's astrological day
+        if current_dt < today_sunrise:
+            astro_date = selected_date - timedelta(days=1)
+            astro_sunrise = get_sunrise(astro_date.year, astro_date.month, astro_date.day, lat, lon, tz_offset)
+        else:
+            astro_date = selected_date
+            astro_sunrise = today_sunrise
+            
+        hours_since_sunrise = int((current_dt - astro_sunrise).total_seconds() // 3600)
+        start_idx = DAY_START_IDX[astro_date.weekday()]
+        
+        def get_hora_info(offset_hours):
+            target_hours = hours_since_sunrise + offset_hours
+            p_idx = (start_idx + target_hours) % 7
+            h_start = astro_sunrise + timedelta(hours=target_hours)
+            h_end = h_start + timedelta(hours=1)
+            return HORA_PLANETS[p_idx], h_start.strftime("%H:%M"), h_end.strftime("%H:%M")
+
+        prev_p, prev_s, prev_e = get_hora_info(-1)
+        curr_p, curr_s, curr_e = get_hora_info(0)
+        next_p, next_s, next_e = get_hora_info(1)
+
+        # Hora Table HTML
+        hora_html = f"""
+        <table style='width:100%; border-collapse: collapse; font-size: 13px; text-align: center; border: 1px solid #ccc; background-color: white; margin-bottom: 12px;'>
+            <tr style='background-color: #f8f9fa; color: #000;'>
+                <th style='border: 1px solid #ccc; padding: 6px; color: #EF4444;'>⏮️ Previous Hora</th>
+                <th style='border: 1px solid #ccc; padding: 6px; color: #10B981;'>▶️ Current Hora</th>
+                <th style='border: 1px solid #ccc; padding: 6px; color: #F59E0B;'>⏭️ Next Hora</th>
+            </tr>
+            <tr style='background-color: #ffffff; color: #000; font-weight: bold;'>
+                <td style='border: 1px solid #ccc; padding: 6px;'>{prev_p}<br><span style='font-size: 11px; font-weight: normal; color: #666;'>{prev_s} - {prev_e}</span></td>
+                <td style='border: 1px solid #ccc; padding: 6px; font-size: 14px;'>{curr_p}<br><span style='font-size: 11px; font-weight: bold; color: #000;'>{curr_s} - {curr_e}</span></td>
+                <td style='border: 1px solid #ccc; padding: 6px;'>{next_p}<br><span style='font-size: 11px; font-weight: normal; color: #666;'>{next_s} - {next_e}</span></td>
+            </tr>
+        </table>
+        """
+        st.markdown(hora_html, unsafe_allow_html=True)
+        
+        # --- 2. PANCHANG TIMELINE ---
         vara, timelines = get_panchang_timeline(selected_date.year, selected_date.month, selected_date.day, tz_offset)
         
         panchang_html = f"""
