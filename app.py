@@ -82,6 +82,89 @@ SECTORS = {
 ZONE_SCORES = [1, 1, -1, 1, 0, -1, 1, -1, 1, -1, 1, -1]
 
 # ==========================================
+# PANCHANG CONSTANTS & CALCULATION ENGINE
+# ==========================================
+NAKSHATRAS = ["Ashwini", "Bharani", "Krittika", "Rohini", "Mrigashira", "Ardra", "Punarvasu", "Pushya", "Ashlesha",
+              "Magha", "Purva Phalguni", "Uttara Phalguni", "Hasta", "Chitra", "Swati", "Vishakha", "Anuradha", "Jyeshtha",
+              "Mula", "Purva Ashadha", "Uttara Ashadha", "Shravana", "Dhanishta", "Shatabhisha", "Purva Bhadrapada", "Uttara Bhadrapada", "Revati"]
+
+YOGAS = ["Vishkumbha", "Priti", "Ayushman", "Saubhagya", "Shobhana", "Atiganda", "Sukarma", "Dhriti", "Shula", "Ganda",
+         "Vriddhi", "Dhruva", "Vyaghata", "Harshana", "Vajra", "Siddhi", "Vyatipata", "Variyan", "Parigha", "Shiva",
+         "Siddha", "Sadhya", "Shubha", "Shukla", "Brahma", "Indra", "Vaidhriti"]
+
+TITHIS = ["Shukla Pratipada", "Shukla Dwitiya", "Shukla Tritiya", "Shukla Chaturthi", "Shukla Panchami", "Shukla Shashthi", "Shukla Saptami", "Shukla Ashtami", "Shukla Navami", "Shukla Dashami", "Shukla Ekadashi", "Shukla Dwadashi", "Shukla Trayodashi", "Shukla Chaturdashi", "Purnima",
+          "Krishna Pratipada", "Krishna Dwitiya", "Krishna Tritiya", "Krishna Chaturthi", "Krishna Panchami", "Krishna Shashthi", "Krishna Saptami", "Krishna Ashtami", "Krishna Navami", "Krishna Dashami", "Krishna Ekadashi", "Krishna Dwadashi", "Krishna Trayodashi", "Krishna Chaturdashi", "Amavasya"]
+
+def get_karana_name(k_num):
+    if k_num == 1: return "Kinstughna"
+    if k_num == 58: return "Shakuni"
+    if k_num == 59: return "Chatushpada"
+    if k_num == 60: return "Naga"
+    moving = ["Bava", "Balava", "Kaulava", "Taitila", "Gara", "Vanija", "Vishti"]
+    return moving[(k_num - 2) % 7]
+
+def calculate_panchang_at(jd):
+    swe.set_sid_mode(swe.SIDM_LAHIRI)
+    moon_pos, _ = swe.calc_ut(jd, swe.MOON, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
+    sun_pos, _ = swe.calc_ut(jd, swe.SUN, swe.FLG_SWIEPH | swe.FLG_SIDEREAL)
+    
+    m_lon = moon_pos[0]
+    s_lon = sun_pos[0]
+    
+    nak_num = int(m_lon / (360/27.0)) % 27
+    nak_name = NAKSHATRAS[nak_num]
+    
+    nak_rem = m_lon % (360/27.0)
+    pada_num = int(nak_rem / (360/108.0)) + 1
+    
+    diff = (m_lon - s_lon) % 360
+    tithi_idx = int(diff / 12.0) % 30
+    tithi_name = TITHIS[tithi_idx]
+    
+    karana_num = int(diff / 6.0) + 1
+    karana_name = get_karana_name(karana_num)
+    
+    sum_lon = (m_lon + s_lon) % 360
+    yoga_num = int(sum_lon / (360/27.0)) % 27
+    yoga_name = YOGAS[yoga_num]
+    
+    return {
+        "Nakshatra": nak_name,
+        "Pada": str(pada_num),
+        "Tithi": tithi_name,
+        "Yoga": yoga_name,
+        "Karana": karana_name
+    }
+
+@st.cache_data(show_spinner=False)
+def get_daily_panchang(year, month, day, tz_offset):
+    start_t = datetime(year, month, day, 0, 0)
+    end_t = datetime(year, month, day, 23, 59)
+    
+    vara = start_t.strftime("%A")
+    
+    curr_t = start_t
+    jd = swe.julday(curr_t.year, curr_t.month, curr_t.day, curr_t.hour + curr_t.minute/60.0 - tz_offset)
+    initial_p = calculate_panchang_at(jd)
+    
+    changes = {k: [] for k in initial_p.keys()}
+    current_p = initial_p.copy()
+    
+    curr_t += timedelta(minutes=5)
+    while curr_t <= end_t:
+        jd = swe.julday(curr_t.year, curr_t.month, curr_t.day, curr_t.hour + curr_t.minute/60.0 - tz_offset)
+        new_p = calculate_panchang_at(jd)
+        
+        for key in current_p:
+            if new_p[key] != current_p[key]:
+                changes[key].append((new_p[key], curr_t.strftime("%H:%M")))
+                current_p[key] = new_p[key]
+                
+        curr_t += timedelta(minutes=5)
+        
+    return vara, initial_p, changes
+
+# ==========================================
 # CORE CALCULATION FUNCTIONS
 # ==========================================
 def get_current_local_rounded(tz_offset):
@@ -596,13 +679,47 @@ with col_right:
         elif ZONE_SCORES[zone_idx] == -1:
             bearish_planets.append(p_name)
             
-    st.markdown("### Planet House Seating")
-    st.markdown(
-        f"| 🟢 BULLISH ({len(bullish_planets)}) | 🔴 BEARISH ({len(bearish_planets)}) |\n"
-        f"| :--- | :--- |\n"
-        f"| **{', '.join(bullish_planets) if bullish_planets else '-'}** | **{', '.join(bearish_planets) if bearish_planets else '-'}** |"
-    )
-    st.markdown("<br>", unsafe_allow_html=True)
+    # --- PANCHANG & PLANET HOUSE SEATING (SIDE-BY-SIDE NESTED COLUMNS) ---
+    p_col1, p_col2 = st.columns([1.7, 1], gap="small")
+    
+    with p_col1:
+        st.markdown("### 🕉️ Daily Panchang")
+        vara, initial_p, p_changes = get_daily_panchang(selected_date.year, selected_date.month, selected_date.day, tz_offset)
+        
+        # Construct the 2x6 Table dynamically
+        panchang_html = f"""
+        <table style='width:100%; border-collapse: collapse; font-size: 11px; text-align: center; border: 1px solid #444;'>
+            <tr style='background-color:#1f2937; color:white;'>
+                <th style='border: 1px solid #444; padding: 4px;'>Vaar</th>
+                <th style='border: 1px solid #444; padding: 4px;'>Nakshatra</th>
+                <th style='border: 1px solid #444; padding: 4px;'>Pada</th>
+                <th style='border: 1px solid #444; padding: 4px;'>Tithi</th>
+                <th style='border: 1px solid #444; padding: 4px;'>Yoga</th>
+                <th style='border: 1px solid #444; padding: 4px;'>Karana</th>
+            </tr>
+            <tr style='background-color:#0e1117; color:#E2E8F0; vertical-align: top;'>
+                <td style='border: 1px solid #444; padding: 4px;'>{vara}</td>
+        """
+        
+        for key in ["Nakshatra", "Pada", "Tithi", "Yoga", "Karana"]:
+            val_str = initial_p[key]
+            if p_changes[key]:
+                # If there is a change during the day, append it as a highlighted bullet point below in the exact same cell
+                val_str += "<br><br>" + "".join([f"<span style='color:#F59E0B; font-size:10px; font-weight:bold;'>• {v} @ {t}</span><br>" for v, t in p_changes[key]])
+            panchang_html += f"<td style='border: 1px solid #444; padding: 4px;'>{val_str}</td>"
+            
+        panchang_html += "</tr></table><br>"
+        st.markdown(panchang_html, unsafe_allow_html=True)
+        
+    with p_col2:
+        st.markdown("### Planet House Seating")
+        st.markdown(
+            f"| 🟢 BULLISH ({len(bullish_planets)}) | 🔴 BEARISH ({len(bearish_planets)}) |\n"
+            f"| :--- | :--- |\n"
+            f"| **{', '.join(bullish_planets) if bullish_planets else '-'}** | **{', '.join(bearish_planets) if bearish_planets else '-'}** |"
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
+    # ----------------------------------------------------------------------
     
     # --- ASTROLOGICAL MATRIX TABLE ---
     st.markdown("### Astrological Matrix")
