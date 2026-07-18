@@ -179,95 +179,76 @@ def get_current_local_rounded(tz_offset):
     return rounded_time.date(), rounded_time.time()
     
 def get_sunrise(year, month, day, lat, lon, tz_offset):
-    # Convert midnight local time to UTC to begin the ephemeris search
-    dt_local = datetime(year, month, day, 0, 0)
-    dt_utc = dt_local - timedelta(hours=tz_offset)
-    jd_ut = swe.julday(dt_utc.year, dt_utc.month, dt_utc.day, dt_utc.hour)
-    
-    geopos = (float(lon), float(lat), 0.0)
-    
-    # Swisseph rise_trans signatures vary wildly across Python versions. 
-    # We will try all known variations gracefully.
-    result = None
-    variations = [
-        # Modern pyswisseph (8 args, expects pressure and temp)
-        lambda: swe.rise_trans(jd_ut, swe.SUN, "", swe.FLG_SWIEPH, swe.CALC_RISE, geopos, 0.0, 0.0),
-        lambda: swe.rise_trans(jd_ut, swe.SUN, b"", swe.FLG_SWIEPH, swe.CALC_RISE, geopos, 0.0, 0.0),
-        # Older pyswisseph (6 args)
-        lambda: swe.rise_trans(jd_ut, swe.SUN, "", swe.FLG_SWIEPH, swe.CALC_RISE, geopos),
-        lambda: swe.rise_trans(jd_ut, swe.SUN, b"", swe.FLG_SWIEPH, swe.CALC_RISE, geopos)
-    ]
-    
-    for func in variations:
-        try:
-            result = func()
-            break  # Success! Break out of the loop
-        except Exception:
-            continue
-            
-    if result is None:
-        # Ultimate failsafe: if the library completely fails, default to 06:00 AM local time
-        return datetime(year, month, day, 6, 0)
-
-    # Safely extract the Julian Day float from heavily nested return types (e.g. ((2459000.12,), ""))
-    def get_first_float(obj):
-        if isinstance(obj, (list, tuple)):
-            return get_first_float(obj[0])
-        return float(obj)
-
-    rise_jd = get_first_float(result)
-
-    # Convert Julian Day back to standard date/time
-    y, m, d, h_float = swe.revjul(rise_jd)
-    
-    # Use timedelta to safely handle edge cases (like 23.999 hours rounding to 24)
-    utc_sunrise = datetime(y, m, d) + timedelta(hours=h_float)
-    local_sunrise = utc_sunrise + timedelta(hours=tz_offset)
-    
-    # Drop seconds/microseconds to keep it clean for the UI comparison
-    local_sunrise = local_sunrise.replace(second=0, microsecond=0)
-    
-    return local_sunrise
+    try:
+        dt_local = datetime(year, month, day, 0, 0)
+        dt_utc = dt_local - timedelta(hours=tz_offset)
+        jd_ut = swe.julday(dt_utc.year, dt_utc.month, dt_utc.day, dt_utc.hour)
+        geopos = (float(lon), float(lat), 0.0)
+        
+        # 1 = swe.CALC_RISE
+        res = swe.rise_trans(jd_ut, swe.SUN, b"", swe.FLG_SWIEPH, 1, geopos)
+        if isinstance(res, tuple): res = res[0]
+        if isinstance(res, tuple): res = res[0]
+        
+        y, m, d, h_float = swe.revjul(float(res))
+        utc_dt = datetime(int(y), int(m), int(d)) + timedelta(hours=h_float)
+        local_dt = utc_dt + timedelta(hours=tz_offset)
+        return local_dt.replace(second=0, microsecond=0)
+    except Exception:
+        # PURE MATH FALLBACK (Bypasses library bugs, accurate to ~1 min)
+        dt = datetime(year, month, day)
+        doy = dt.timetuple().tm_yday
+        decl_rad = math.radians(23.45 * math.sin(math.radians((360.0 / 365.0) * (doy - 81))))
+        lat_rad = math.radians(lat)
+        cos_H = (math.sin(math.radians(-0.833)) - math.sin(lat_rad) * math.sin(decl_rad)) / (math.cos(lat_rad) * math.cos(decl_rad))
+        cos_H = max(-1.0, min(1.0, cos_H))
+        H_deg = math.degrees(math.acos(cos_H))
+        lon_correction = (tz_offset * 15.0) - lon
+        B = math.radians((360.0 / 365.0) * (doy - 81))
+        EoT = 9.87 * math.sin(2 * B) - 7.53 * math.cos(B) - 1.5 * math.sin(B)
+        
+        solar_noon_mins = 12 * 60 + (lon_correction * 4) - EoT
+        event_mins = solar_noon_mins - (H_deg * 4)
+        
+        h = int((event_mins // 60) % 24)
+        m = int(event_mins % 60)
+        return datetime(year, month, day, h, m)
 
 def get_sunset(year, month, day, lat, lon, tz_offset):
-    # Convert midnight local time to UTC to begin the ephemeris search
-    dt_local = datetime(year, month, day, 0, 0)
-    dt_utc = dt_local - timedelta(hours=tz_offset)
-    jd_ut = swe.julday(dt_utc.year, dt_utc.month, dt_utc.day, dt_utc.hour)
-    
-    geopos = (float(lon), float(lat), 0.0)
-    
-    result = None
-    variations = [
-        # swe.CALC_SET triggers the sunset calculation
-        lambda: swe.rise_trans(jd_ut, swe.SUN, "", swe.FLG_SWIEPH, swe.CALC_SET, geopos, 0.0, 0.0),
-        lambda: swe.rise_trans(jd_ut, swe.SUN, b"", swe.FLG_SWIEPH, swe.CALC_SET, geopos, 0.0, 0.0),
-        lambda: swe.rise_trans(jd_ut, swe.SUN, "", swe.FLG_SWIEPH, swe.CALC_SET, geopos),
-        lambda: swe.rise_trans(jd_ut, swe.SUN, b"", swe.FLG_SWIEPH, swe.CALC_SET, geopos)
-    ]
-    
-    for func in variations:
-        try:
-            result = func()
-            break
-        except Exception:
-            continue
-            
-    if result is None:
-        return datetime(year, month, day, 18, 0)
-
-    def get_first_float(obj):
-        if isinstance(obj, (list, tuple)):
-            return get_first_float(obj[0])
-        return float(obj)
-
-    set_jd = get_first_float(result)
-
-    y, m, d, h_float = swe.revjul(set_jd)
-    utc_sunset = datetime(y, m, d) + timedelta(hours=h_float)
-    local_sunset = utc_sunset + timedelta(hours=tz_offset)
-    
-    return local_sunset.replace(second=0, microsecond=0)
+    try:
+        dt_local = datetime(year, month, day, 0, 0)
+        dt_utc = dt_local - timedelta(hours=tz_offset)
+        jd_ut = swe.julday(dt_utc.year, dt_utc.month, dt_utc.day, dt_utc.hour)
+        geopos = (float(lon), float(lat), 0.0)
+        
+        # 2 = swe.CALC_SET
+        res = swe.rise_trans(jd_ut, swe.SUN, b"", swe.FLG_SWIEPH, 2, geopos)
+        if isinstance(res, tuple): res = res[0]
+        if isinstance(res, tuple): res = res[0]
+        
+        y, m, d, h_float = swe.revjul(float(res))
+        utc_dt = datetime(int(y), int(m), int(d)) + timedelta(hours=h_float)
+        local_dt = utc_dt + timedelta(hours=tz_offset)
+        return local_dt.replace(second=0, microsecond=0)
+    except Exception:
+        # PURE MATH FALLBACK (Bypasses library bugs, accurate to ~1 min)
+        dt = datetime(year, month, day)
+        doy = dt.timetuple().tm_yday
+        decl_rad = math.radians(23.45 * math.sin(math.radians((360.0 / 365.0) * (doy - 81))))
+        lat_rad = math.radians(lat)
+        cos_H = (math.sin(math.radians(-0.833)) - math.sin(lat_rad) * math.sin(decl_rad)) / (math.cos(lat_rad) * math.cos(decl_rad))
+        cos_H = max(-1.0, min(1.0, cos_H))
+        H_deg = math.degrees(math.acos(cos_H))
+        lon_correction = (tz_offset * 15.0) - lon
+        B = math.radians((360.0 / 365.0) * (doy - 81))
+        EoT = 9.87 * math.sin(2 * B) - 7.53 * math.cos(B) - 1.5 * math.sin(B)
+        
+        solar_noon_mins = 12 * 60 + (lon_correction * 4) - EoT
+        event_mins = solar_noon_mins + (H_deg * 4) # Plus for sunset
+        
+        h = int((event_mins // 60) % 24)
+        m = int(event_mins % 60)
+        return datetime(year, month, day, h, m)
     
 def get_jd(year, month, day, hour, minute, tz_offset):
     local_time = datetime(year, month, day, hour, minute)
