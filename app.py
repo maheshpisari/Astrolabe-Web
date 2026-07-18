@@ -686,27 +686,27 @@ with col_right:
         st.markdown("### 🕉️ Daily Panchang")
         vara, initial_p, p_changes = get_daily_panchang(selected_date.year, selected_date.month, selected_date.day, tz_offset)
         
-        # Construct the 2x6 Table dynamically
+        # Construct the 2x6 Table dynamically with updated White Background, Bold Text, and +2px font size
         panchang_html = f"""
-        <table style='width:100%; border-collapse: collapse; font-size: 11px; text-align: center; border: 1px solid #444;'>
-            <tr style='background-color:#1f2937; color:white;'>
-                <th style='border: 1px solid #444; padding: 4px;'>Vaar</th>
-                <th style='border: 1px solid #444; padding: 4px;'>Nakshatra</th>
-                <th style='border: 1px solid #444; padding: 4px;'>Pada</th>
-                <th style='border: 1px solid #444; padding: 4px;'>Tithi</th>
-                <th style='border: 1px solid #444; padding: 4px;'>Yoga</th>
-                <th style='border: 1px solid #444; padding: 4px;'>Karana</th>
+        <table style='width:100%; border-collapse: collapse; font-size: 13px; font-weight: bold; text-align: center; border: 1px solid #ccc; background-color: white;'>
+            <tr style='background-color: #f8f9fa; color: #000000;'>
+                <th style='border: 1px solid #ccc; padding: 6px;'>Vaar</th>
+                <th style='border: 1px solid #ccc; padding: 6px;'>Nakshatra</th>
+                <th style='border: 1px solid #ccc; padding: 6px;'>Pada</th>
+                <th style='border: 1px solid #ccc; padding: 6px;'>Tithi</th>
+                <th style='border: 1px solid #ccc; padding: 6px;'>Yoga</th>
+                <th style='border: 1px solid #ccc; padding: 6px;'>Karana</th>
             </tr>
-            <tr style='background-color:#0e1117; color:#E2E8F0; vertical-align: top;'>
-                <td style='border: 1px solid #444; padding: 4px;'>{vara}</td>
+            <tr style='background-color: #ffffff; color: #000000; vertical-align: top;'>
+                <td style='border: 1px solid #ccc; padding: 6px;'>{vara}</td>
         """
         
         for key in ["Nakshatra", "Pada", "Tithi", "Yoga", "Karana"]:
             val_str = initial_p[key]
             if p_changes[key]:
-                # If there is a change during the day, append it as a highlighted bullet point below in the exact same cell
-                val_str += "<br><br>" + "".join([f"<span style='color:#F59E0B; font-size:10px; font-weight:bold;'>• {v} @ {t}</span><br>" for v, t in p_changes[key]])
-            panchang_html += f"<td style='border: 1px solid #444; padding: 4px;'>{val_str}</td>"
+                # Bullet points font size also increased to 12px, color darkened to #D97706 for contrast on white
+                val_str += "<br><br>" + "".join([f"<span style='color:#D97706; font-size:12px; font-weight:900;'>• {v} @ {t}</span><br>" for v, t in p_changes[key]])
+            panchang_html += f"<td style='border: 1px solid #ccc; padding: 6px;'>{val_str}</td>"
             
         panchang_html += "</tr></table><br>"
         st.markdown(panchang_html, unsafe_allow_html=True)
