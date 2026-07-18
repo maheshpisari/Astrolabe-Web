@@ -767,16 +767,16 @@ with col_left:
     next_p, next_s, next_e = all_horas[active_idx + 1]
 
     hora_html = f"""
-    <table style='width:100%; border-collapse: collapse; font-size: 13px; text-align: center; border: 1px solid #ccc; background-color: white; margin-bottom: 12px;'>
+    <table style='width:100%; border-collapse: collapse; font-size: 15px; text-align: center; border: 1px solid #ccc; background-color: white; margin-bottom: 12px;'>
         <tr style='background-color: #f8f9fa; color: #000;'>
             <th style='border: 1px solid #ccc; padding: 6px; color: #EF4444;'>⏮️ Previous Hora</th>
             <th style='border: 1px solid #ccc; padding: 6px; color: #10B981;'>▶️ Current Hora</th>
             <th style='border: 1px solid #ccc; padding: 6px; color: #F59E0B;'>⏭️ Next Hora</th>
         </tr>
         <tr style='background-color: #ffffff; color: #000; font-weight: bold;'>
-            <td style='border: 1px solid #ccc; padding: 6px;'>{prev_p}<br><span style='font-size: 11px; font-weight: normal; color: #666;'>{prev_s.strftime("%H:%M")} - {prev_e.strftime("%H:%M")}</span></td>
-            <td style='border: 1px solid #ccc; padding: 6px; font-size: 14px;'>{curr_p}<br><span style='font-size: 11px; font-weight: bold; color: #000;'>{curr_s.strftime("%H:%M")} - {curr_e.strftime("%H:%M")}</span></td>
-            <td style='border: 1px solid #ccc; padding: 6px;'>{next_p}<br><span style='font-size: 11px; font-weight: normal; color: #666;'>{next_s.strftime("%H:%M")} - {next_e.strftime("%H:%M")}</span></td>
+            <td style='border: 1px solid #ccc; padding: 6px;'>{prev_p}<br><span style='font-size: 13px; font-weight: normal; color: #666;'>{prev_s.strftime("%H:%M")} - {prev_e.strftime("%H:%M")}</span></td>
+            <td style='border: 1px solid #ccc; padding: 6px; font-size: 14px;'>{curr_p}<br><span style='font-size: 13px; font-weight: bold; color: #000;'>{curr_s.strftime("%H:%M")} - {curr_e.strftime("%H:%M")}</span></td>
+            <td style='border: 1px solid #ccc; padding: 6px;'>{next_p}<br><span style='font-size: 13px; font-weight: normal; color: #666;'>{next_s.strftime("%H:%M")} - {next_e.strftime("%H:%M")}</span></td>
         </tr>
     </table>
     """
@@ -786,7 +786,7 @@ with col_left:
     vara, timelines = get_panchang_timeline(selected_date.year, selected_date.month, selected_date.day, tz_offset)
     
     panchang_html = f"""
-    <table style='width:100%; border-collapse: collapse; font-size: 13px; font-weight: bold; text-align: center; border: 1px solid #ccc; background-color: white;'>
+    <table style='width:100%; border-collapse: collapse; font-size: 15px; font-weight: bold; text-align: center; border: 1px solid #ccc; background-color: white;'>
         <tr style='background-color: #f8f9fa; color: #000000;'>
             <th style='border: 1px solid #ccc; padding: 6px;'>Vaar</th>
             <th style='border: 1px solid #ccc; padding: 6px;'>Nakshatra</th>
@@ -813,13 +813,13 @@ with col_left:
             
             if i < active_idx:
                 color, status = "#EF4444", f"Ended {t_str}" if i > 0 else "Started 00:00"
-                cell_html += f"<div style='color: {color}; padding: 4px 0;'><span style='font-size: 11px; font-weight: normal;'>{status}</span><br>{val}</div>"
+                cell_html += f"<div style='color: {color}; padding: 4px 0;'><span style='font-size: 13px; font-weight: normal;'>{status}</span><br>{val}</div>"
             elif i == active_idx:
                 color, status = "#000000", f"Running (Since {t_str})"
-                cell_html += f"<div style='color: {color}; font-size: 14px; font-weight: 900; padding: 6px 0;'><span style='font-size: 11px; font-weight: bold; color: #444;'>👉 {status}</span><br>{val}</div>"
+                cell_html += f"<div style='color: {color}; font-size: 14px; font-weight: 900; padding: 6px 0;'><span style='font-size: 13px; font-weight: bold; color: #444;'>👉 {status}</span><br>{val}</div>"
             else:
                 color, status = "#F59E0B", f"Upcoming @ {t_str}"
-                cell_html += f"<div style='color: {color}; padding: 4px 0;'><span style='font-size: 11px; font-weight: normal;'>{status}</span><br>{val}</div>"
+                cell_html += f"<div style='color: {color}; padding: 4px 0;'><span style='font-size: 13px; font-weight: normal;'>{status}</span><br>{val}</div>"
             
             if i < len(timeline) - 1:
                 cell_html += "<hr style='margin: 2px 0; border: 0; border-top: 1px dotted #ccc;'>"
