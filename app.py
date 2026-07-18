@@ -177,7 +177,27 @@ def get_current_local_rounded(tz_offset):
         minute = 0
     rounded_time = local_now.replace(minute=minute, second=0, microsecond=0)
     return rounded_time.date(), rounded_time.time()
-
+    
+def get_sunrise(year, month, day, lat, lon, tz_offset):
+    # Convert midnight local time to UTC to begin the ephemeris search
+    dt_local = datetime(year, month, day, 0, 0)
+    dt_utc = dt_local - timedelta(hours=tz_offset)
+    jd_ut = swe.julday(dt_utc.year, dt_utc.month, dt_utc.day, dt_utc.hour)
+    
+    # Calculate exact sunrise using Swiss Ephemeris (CALC_RISE)
+    # Includes standard atmospheric pressure (1013.25) and temp (15.0) for refraction accuracy
+    res, tret = swe.rise_trans(jd_ut, swe.SUN, "", swe.FLG_SWIEPH, swe.CALC_RISE, (lon, lat, 0.0), 1013.25, 15.0)
+    
+    # Extract the UTC time of sunrise and convert back to Python datetime
+    y, m, d, h_float = swe.revjul(tret[0])
+    h = int(h_float)
+    mins = int((h_float - h) * 60)
+    
+    utc_sunrise = datetime(y, m, d, h, mins)
+    local_sunrise = utc_sunrise + timedelta(hours=tz_offset)
+    
+    return local_sunrise
+    
 def get_jd(year, month, day, hour, minute, tz_offset):
     local_time = datetime(year, month, day, hour, minute)
     utc_time = local_time - timedelta(hours=tz_offset)
@@ -679,6 +699,27 @@ with col_right:
             bullish_planets.append(p_name)
         elif ZONE_SCORES[zone_idx] == -1:
             bearish_planets.append(p_name)
+
+
+    # --- MOVED: 5-Minute Time Dropdown ---
+    time_options = [time(h, m) for h in range(24) for m in range(0, 60, 5)]
+    rounded_min = 5 * (selected_time.minute // 5)
+    safe_time = time(selected_time.hour, rounded_min)
+    try:
+        t_idx = time_options.index(safe_time)
+    except ValueError:
+        t_idx = 0
+        
+    st.selectbox(
+        "⏱️ Quick Select Time (5m intervals)",
+        options=time_options,
+        index=t_idx,
+        format_func=lambda t: t.strftime("%H:%M"),
+        key="time_dropdown",
+        on_change=sync_time_from_dropdown
+    )
+    st.markdown("<br>", unsafe_allow_html=True)
+    # ---------------------------------------------------------
             
     # --- PANCHANG & PLANET HOUSE SEATING (SIDE-BY-SIDE NESTED COLUMNS) ---
     p_col1, p_col2 = st.columns([1.7, 1], gap="small")
@@ -791,26 +832,7 @@ with col_right:
     st.markdown(table_html, unsafe_allow_html=True)
     # ---------------------------------------------------------
 
-    # --- MOVED: 5-Minute Time Dropdown ---
-    time_options = [time(h, m) for h in range(24) for m in range(0, 60, 5)]
-    rounded_min = 5 * (selected_time.minute // 5)
-    safe_time = time(selected_time.hour, rounded_min)
-    try:
-        t_idx = time_options.index(safe_time)
-    except ValueError:
-        t_idx = 0
-        
-    st.selectbox(
-        "⏱️ Quick Select Time (5m intervals)",
-        options=time_options,
-        index=t_idx,
-        format_func=lambda t: t.strftime("%H:%M"),
-        key="time_dropdown",
-        on_change=sync_time_from_dropdown
-    )
-    st.markdown("<br>", unsafe_allow_html=True)
-    # ---------------------------------------------------------
-    
+       
     st.subheader(f"Intraday Live Scoring ({ticker})")
     
     malefics = ["SA", "MA", "RA"]
