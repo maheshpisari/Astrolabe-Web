@@ -184,12 +184,32 @@ def get_sunrise(year, month, day, lat, lon, tz_offset):
     dt_utc = dt_local - timedelta(hours=tz_offset)
     jd_ut = swe.julday(dt_utc.year, dt_utc.month, dt_utc.day, dt_utc.hour)
     
-    # Calculate exact sunrise using Swiss Ephemeris (CALC_RISE)
-    # Includes standard atmospheric pressure (1013.25) and temp (15.0) for refraction accuracy
-    res, tret = swe.rise_trans(jd_ut, swe.SUN, "", swe.FLG_SWIEPH, swe.CALC_RISE, (lon, lat, 0.0), 1013.25, 15.0)
+    geopos = (float(lon), float(lat), 0.0)
     
-    # Extract the UTC time of sunrise and convert back to Python datetime
-    y, m, d, h_float = swe.revjul(tret[0])
+    # Safely handle the notoriously inconsistent pyswisseph wrapper signatures
+    try:
+        # Standard positional (6 args)
+        result = swe.rise_trans(jd_ut, swe.SUN, "", swe.FLG_SWIEPH, swe.CALC_RISE, geopos)
+    except TypeError:
+        try:
+            # Fallback for strict Python 3 byte-string wrappers
+            result = swe.rise_trans(jd_ut, swe.SUN, b"", swe.FLG_SWIEPH, swe.CALC_RISE, geopos)
+        except TypeError:
+            # Fallback for wrappers that omit starname entirely
+            result = swe.rise_trans(jd_ut, swe.SUN, swe.FLG_SWIEPH, swe.CALC_RISE, geopos)
+
+    # Safely extract the Julian Day regardless of return type (Float vs Tuple)
+    if isinstance(result, tuple):
+        if len(result) == 2 and isinstance(result[1], (tuple, list)):
+            rise_jd = result[1][0]  # format: (flag, tret_tuple)
+        elif len(result) >= 1 and isinstance(result[0], (tuple, list)):
+            rise_jd = result[0][0]  # format: (tret_tuple, serr)
+        else:
+            rise_jd = result[0]     # format: (float_jd, ...)
+    else:
+        rise_jd = result            # format: float
+
+    y, m, d, h_float = swe.revjul(rise_jd)
     h = int(h_float)
     mins = int((h_float - h) * 60)
     
@@ -727,9 +747,9 @@ with col_right:
     with p_col1:
         st.markdown("### 🕉️ Daily Panchang & Hora")
         
-        # --- 1. ASTROLOGICAL HORA CALCULATION (SUNRISE DYNAMIC) ---
+        # --- 1. ASTROLOGICAL HORA CALCULATION (DYNAMIC SUNRISE) ---
         HORA_PLANETS = ["Sun", "Venus", "Mercury", "Moon", "Saturn", "Jupiter", "Mars"]
-        # Python weekday mapping to Chaldean Hora sequence start index (Mon=3, Tue=6, Wed=2, Thu=5, Fri=1, Sat=4, Sun=0)
+        # Day of week start index (Mon=3, Tue=6, Wed=2, Thu=5, Fri=1, Sat=4, Sun=0)
         DAY_START_IDX = {0: 3, 1: 6, 2: 2, 3: 5, 4: 1, 5: 4, 6: 0}
         
         current_dt = datetime.combine(selected_date, selected_time)
@@ -794,34 +814,25 @@ with col_right:
         for key in ["Nakshatra", "Pada", "Tithi", "Yoga", "Karana"]:
             timeline = timelines[key]
             
-            # 1. Determine which timeline item is currently "active" based on the slider time
             active_idx = 0
             for i, (t_val, _) in enumerate(timeline):
                 if selected_time >= t_val:
                     active_idx = i
             
-            # 2. Build the cell HTML looping through the day's timeline
             cell_html = ""
             for i, (t_val, val) in enumerate(timeline):
                 t_str = "00:00" if i == 0 else t_val.strftime("%H:%M")
                 
                 if i < active_idx:
-                    # PAST (Red)
-                    color = "#EF4444"
-                    status = f"Ended {t_str}" if i > 0 else "Started 00:00"
+                    color, status = "#EF4444", f"Ended {t_str}" if i > 0 else "Started 00:00"
                     cell_html += f"<div style='color: {color}; padding: 4px 0;'><span style='font-size: 11px; font-weight: normal;'>{status}</span><br>{val}</div>"
                 elif i == active_idx:
-                    # PRESENT (Black & Bolder)
-                    color = "#000000"
-                    status = f"Running (Since {t_str})"
+                    color, status = "#000000", f"Running (Since {t_str})"
                     cell_html += f"<div style='color: {color}; font-size: 14px; font-weight: 900; padding: 6px 0;'><span style='font-size: 11px; font-weight: bold; color: #444;'>👉 {status}</span><br>{val}</div>"
                 else:
-                    # FUTURE (Orange)
-                    color = "#F59E0B"
-                    status = f"Upcoming @ {t_str}"
+                    color, status = "#F59E0B", f"Upcoming @ {t_str}"
                     cell_html += f"<div style='color: {color}; padding: 4px 0;'><span style='font-size: 11px; font-weight: normal;'>{status}</span><br>{val}</div>"
                 
-                # Add a light dotted divider between timeline events if there are multiple
                 if i < len(timeline) - 1:
                     cell_html += "<hr style='margin: 2px 0; border: 0; border-top: 1px dotted #ccc;'>"
                     
