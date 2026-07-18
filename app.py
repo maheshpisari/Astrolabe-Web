@@ -715,6 +715,119 @@ with col_left:
             selected_time.hour, selected_time.minute, lat, lon, tz_offset
         )
         st.pyplot(fig, width='stretch')
+
+    st.markdown("---")
+    st.markdown("### 🕉️ Daily Panchang & Hora")
+    
+    # --- 1. ASTROLOGICAL HORA CALCULATION (TRUE VEDIC UNEQUAL HORAS) ---
+    HORA_PLANETS = ["Sun", "Venus", "Mercury", "Moon", "Saturn", "Jupiter", "Mars"]
+    DAY_START_IDX = {0: 3, 1: 6, 2: 2, 3: 5, 4: 1, 5: 4, 6: 0}
+    
+    current_dt = datetime.combine(selected_date, selected_time)
+    
+    def get_3_day_horas(target_dt, lat, lon, tz_offset):
+        base_date = target_dt.date()
+        all_horas = []
+        
+        for d_offset in [-1, 0, 1]:  
+            iter_date = base_date + timedelta(days=d_offset)
+            
+            s_rise = get_sunrise(iter_date.year, iter_date.month, iter_date.day, lat, lon, tz_offset)
+            s_set = get_sunset(iter_date.year, iter_date.month, iter_date.day, lat, lon, tz_offset)
+            
+            next_date = iter_date + timedelta(days=1)
+            next_s_rise = get_sunrise(next_date.year, next_date.month, next_date.day, lat, lon, tz_offset)
+            
+            day_dur = (s_set - s_rise) / 12
+            night_dur = (next_s_rise - s_set) / 12
+            
+            start_idx = DAY_START_IDX[iter_date.weekday()]
+            curr_time = s_rise
+            
+            for i in range(24):
+                p_idx = (start_idx + i) % 7
+                planet = HORA_PLANETS[p_idx]
+                
+                end_time = curr_time + day_dur if i < 12 else curr_time + night_dur
+                all_horas.append((planet, curr_time, end_time))
+                curr_time = end_time
+                
+        return all_horas
+
+    all_horas = get_3_day_horas(current_dt, lat, lon, tz_offset)
+
+    active_idx = 0
+    for i, (p, s, e) in enumerate(all_horas):
+        if s <= current_dt < e:
+            active_idx = i
+            break
+
+    prev_p, prev_s, prev_e = all_horas[active_idx - 1]
+    curr_p, curr_s, curr_e = all_horas[active_idx]
+    next_p, next_s, next_e = all_horas[active_idx + 1]
+
+    hora_html = f"""
+    <table style='width:100%; border-collapse: collapse; font-size: 13px; text-align: center; border: 1px solid #ccc; background-color: white; margin-bottom: 12px;'>
+        <tr style='background-color: #f8f9fa; color: #000;'>
+            <th style='border: 1px solid #ccc; padding: 6px; color: #EF4444;'>⏮️ Previous Hora</th>
+            <th style='border: 1px solid #ccc; padding: 6px; color: #10B981;'>▶️ Current Hora</th>
+            <th style='border: 1px solid #ccc; padding: 6px; color: #F59E0B;'>⏭️ Next Hora</th>
+        </tr>
+        <tr style='background-color: #ffffff; color: #000; font-weight: bold;'>
+            <td style='border: 1px solid #ccc; padding: 6px;'>{prev_p}<br><span style='font-size: 11px; font-weight: normal; color: #666;'>{prev_s.strftime("%H:%M")} - {prev_e.strftime("%H:%M")}</span></td>
+            <td style='border: 1px solid #ccc; padding: 6px; font-size: 14px;'>{curr_p}<br><span style='font-size: 11px; font-weight: bold; color: #000;'>{curr_s.strftime("%H:%M")} - {curr_e.strftime("%H:%M")}</span></td>
+            <td style='border: 1px solid #ccc; padding: 6px;'>{next_p}<br><span style='font-size: 11px; font-weight: normal; color: #666;'>{next_s.strftime("%H:%M")} - {next_e.strftime("%H:%M")}</span></td>
+        </tr>
+    </table>
+    """
+    st.markdown(hora_html, unsafe_allow_html=True)
+    
+    # --- 2. PANCHANG TIMELINE ---
+    vara, timelines = get_panchang_timeline(selected_date.year, selected_date.month, selected_date.day, tz_offset)
+    
+    panchang_html = f"""
+    <table style='width:100%; border-collapse: collapse; font-size: 13px; font-weight: bold; text-align: center; border: 1px solid #ccc; background-color: white;'>
+        <tr style='background-color: #f8f9fa; color: #000000;'>
+            <th style='border: 1px solid #ccc; padding: 6px;'>Vaar</th>
+            <th style='border: 1px solid #ccc; padding: 6px;'>Nakshatra</th>
+            <th style='border: 1px solid #ccc; padding: 6px;'>Pada</th>
+            <th style='border: 1px solid #ccc; padding: 6px;'>Tithi</th>
+            <th style='border: 1px solid #ccc; padding: 6px;'>Yoga</th>
+            <th style='border: 1px solid #ccc; padding: 6px;'>Karana</th>
+        </tr>
+        <tr style='background-color: #ffffff; color: #000000; vertical-align: top;'>
+            <td style='border: 1px solid #ccc; padding: 6px;'>{vara}</td>
+    """
+    
+    for key in ["Nakshatra", "Pada", "Tithi", "Yoga", "Karana"]:
+        timeline = timelines[key]
+        
+        active_idx = 0
+        for i, (t_val, _) in enumerate(timeline):
+            if selected_time >= t_val:
+                active_idx = i
+        
+        cell_html = ""
+        for i, (t_val, val) in enumerate(timeline):
+            t_str = "00:00" if i == 0 else t_val.strftime("%H:%M")
+            
+            if i < active_idx:
+                color, status = "#EF4444", f"Ended {t_str}" if i > 0 else "Started 00:00"
+                cell_html += f"<div style='color: {color}; padding: 4px 0;'><span style='font-size: 11px; font-weight: normal;'>{status}</span><br>{val}</div>"
+            elif i == active_idx:
+                color, status = "#000000", f"Running (Since {t_str})"
+                cell_html += f"<div style='color: {color}; font-size: 14px; font-weight: 900; padding: 6px 0;'><span style='font-size: 11px; font-weight: bold; color: #444;'>👉 {status}</span><br>{val}</div>"
+            else:
+                color, status = "#F59E0B", f"Upcoming @ {t_str}"
+                cell_html += f"<div style='color: {color}; padding: 4px 0;'><span style='font-size: 11px; font-weight: normal;'>{status}</span><br>{val}</div>"
+            
+            if i < len(timeline) - 1:
+                cell_html += "<hr style='margin: 2px 0; border: 0; border-top: 1px dotted #ccc;'>"
+                
+        panchang_html += f"<td style='border: 1px solid #ccc; padding: 4px;'>{cell_html}</td>"
+        
+    panchang_html += "</tr></table><br>"
+    st.markdown(panchang_html, unsafe_allow_html=True)
         
     close_dt = datetime.combine(selected_date, close_t)
     trigger_dt = close_dt - timedelta(minutes=90)
@@ -752,141 +865,17 @@ with col_right:
         elif ZONE_SCORES[zone_idx] == -1:
             bearish_planets.append(p_name)
             
-    # --- PANCHANG & PLANET HOUSE SEATING (SIDE-BY-SIDE NESTED COLUMNS) ---
-    p_col1, p_col2 = st.columns([1.7, 1], gap="small")
-    
-    with p_col1:
-        st.markdown("### 🕉️ Daily Panchang & Hora")
-        
-        # --- 1. ASTROLOGICAL HORA CALCULATION (TRUE VEDIC UNEQUAL HORAS) ---
-        HORA_PLANETS = ["Sun", "Venus", "Mercury", "Moon", "Saturn", "Jupiter", "Mars"]
-        # Python weekday mapping to Chaldean Hora sequence start index (Mon=3, Tue=6, Wed=2, Thu=5, Fri=1, Sat=4, Sun=0)
-        DAY_START_IDX = {0: 3, 1: 6, 2: 2, 3: 5, 4: 1, 5: 4, 6: 0}
-        
-        current_dt = datetime.combine(selected_date, selected_time)
-        
-        # Helper function to generate exactly accurate Vedic Horas spanning a 3-day window 
-        # (This guarantees we never hit a boundary error near midnight)
-        def get_3_day_horas(target_dt, lat, lon, tz_offset):
-            base_date = target_dt.date()
-            all_horas = []
-            
-            for d_offset in [-1, 0, 1]:  # Generate for Yesterday, Today, Tomorrow
-                iter_date = base_date + timedelta(days=d_offset)
-                
-                # 1. Get exact anchors
-                s_rise = get_sunrise(iter_date.year, iter_date.month, iter_date.day, lat, lon, tz_offset)
-                s_set = get_sunset(iter_date.year, iter_date.month, iter_date.day, lat, lon, tz_offset)
-                
-                next_date = iter_date + timedelta(days=1)
-                next_s_rise = get_sunrise(next_date.year, next_date.month, next_date.day, lat, lon, tz_offset)
-                
-                # 2. Divide Day and Night exactly by 12
-                day_dur = (s_set - s_rise) / 12
-                night_dur = (next_s_rise - s_set) / 12
-                
-                start_idx = DAY_START_IDX[iter_date.weekday()]
-                curr_time = s_rise
-                
-                # 3. Create the 24 intervals
-                for i in range(24):
-                    p_idx = (start_idx + i) % 7
-                    planet = HORA_PLANETS[p_idx]
-                    
-                    end_time = curr_time + day_dur if i < 12 else curr_time + night_dur
-                    all_horas.append((planet, curr_time, end_time))
-                    curr_time = end_time
-                    
-            return all_horas
-
-        all_horas = get_3_day_horas(current_dt, lat, lon, tz_offset)
-
-        # Scan the generated timeline to find exactly which Hora we are inside right now
-        active_idx = 0
-        for i, (p, s, e) in enumerate(all_horas):
-            if s <= current_dt < e:
-                active_idx = i
-                break
-
-        prev_p, prev_s, prev_e = all_horas[active_idx - 1]
-        curr_p, curr_s, curr_e = all_horas[active_idx]
-        next_p, next_s, next_e = all_horas[active_idx + 1]
-
-        # Hora Table HTML
-        hora_html = f"""
-        <table style='width:100%; border-collapse: collapse; font-size: 13px; text-align: center; border: 1px solid #ccc; background-color: white; margin-bottom: 12px;'>
-            <tr style='background-color: #f8f9fa; color: #000;'>
-                <th style='border: 1px solid #ccc; padding: 6px; color: #EF4444;'>⏮️ Previous Hora</th>
-                <th style='border: 1px solid #ccc; padding: 6px; color: #10B981;'>▶️ Current Hora</th>
-                <th style='border: 1px solid #ccc; padding: 6px; color: #F59E0B;'>⏭️ Next Hora</th>
-            </tr>
-            <tr style='background-color: #ffffff; color: #000; font-weight: bold;'>
-                <td style='border: 1px solid #ccc; padding: 6px;'>{prev_p}<br><span style='font-size: 11px; font-weight: normal; color: #666;'>{prev_s.strftime("%H:%M")} - {prev_e.strftime("%H:%M")}</span></td>
-                <td style='border: 1px solid #ccc; padding: 6px; font-size: 14px;'>{curr_p}<br><span style='font-size: 11px; font-weight: bold; color: #000;'>{curr_s.strftime("%H:%M")} - {curr_e.strftime("%H:%M")}</span></td>
-                <td style='border: 1px solid #ccc; padding: 6px;'>{next_p}<br><span style='font-size: 11px; font-weight: normal; color: #666;'>{next_s.strftime("%H:%M")} - {next_e.strftime("%H:%M")}</span></td>
-            </tr>
-        </table>
-        """
-        st.markdown(hora_html, unsafe_allow_html=True)
-        
-        # --- 2. PANCHANG TIMELINE ---
-        vara, timelines = get_panchang_timeline(selected_date.year, selected_date.month, selected_date.day, tz_offset)
-        
-        panchang_html = f"""
-        <table style='width:100%; border-collapse: collapse; font-size: 13px; font-weight: bold; text-align: center; border: 1px solid #ccc; background-color: white;'>
-            <tr style='background-color: #f8f9fa; color: #000000;'>
-                <th style='border: 1px solid #ccc; padding: 6px;'>Vaar</th>
-                <th style='border: 1px solid #ccc; padding: 6px;'>Nakshatra</th>
-                <th style='border: 1px solid #ccc; padding: 6px;'>Pada</th>
-                <th style='border: 1px solid #ccc; padding: 6px;'>Tithi</th>
-                <th style='border: 1px solid #ccc; padding: 6px;'>Yoga</th>
-                <th style='border: 1px solid #ccc; padding: 6px;'>Karana</th>
-            </tr>
-            <tr style='background-color: #ffffff; color: #000000; vertical-align: top;'>
-                <td style='border: 1px solid #ccc; padding: 6px;'>{vara}</td>
-        """
-        
-        for key in ["Nakshatra", "Pada", "Tithi", "Yoga", "Karana"]:
-            timeline = timelines[key]
-            
-            active_idx = 0
-            for i, (t_val, _) in enumerate(timeline):
-                if selected_time >= t_val:
-                    active_idx = i
-            
-            cell_html = ""
-            for i, (t_val, val) in enumerate(timeline):
-                t_str = "00:00" if i == 0 else t_val.strftime("%H:%M")
-                
-                if i < active_idx:
-                    color, status = "#EF4444", f"Ended {t_str}" if i > 0 else "Started 00:00"
-                    cell_html += f"<div style='color: {color}; padding: 4px 0;'><span style='font-size: 11px; font-weight: normal;'>{status}</span><br>{val}</div>"
-                elif i == active_idx:
-                    color, status = "#000000", f"Running (Since {t_str})"
-                    cell_html += f"<div style='color: {color}; font-size: 14px; font-weight: 900; padding: 6px 0;'><span style='font-size: 11px; font-weight: bold; color: #444;'>👉 {status}</span><br>{val}</div>"
-                else:
-                    color, status = "#F59E0B", f"Upcoming @ {t_str}"
-                    cell_html += f"<div style='color: {color}; padding: 4px 0;'><span style='font-size: 11px; font-weight: normal;'>{status}</span><br>{val}</div>"
-                
-                if i < len(timeline) - 1:
-                    cell_html += "<hr style='margin: 2px 0; border: 0; border-top: 1px dotted #ccc;'>"
-                    
-            panchang_html += f"<td style='border: 1px solid #ccc; padding: 4px;'>{cell_html}</td>"
-            
-        panchang_html += "</tr></table><br>"
-        st.markdown(panchang_html, unsafe_allow_html=True)
-        
-    with p_col2:
-        st.markdown("### Planet House Seating")
-        st.markdown(
-            f"| 🟢 BULLISH ({len(bullish_planets)}) | 🔴 BEARISH ({len(bearish_planets)}) |\n"
-            f"| :--- | :--- |\n"
-            f"| **{', '.join(bullish_planets) if bullish_planets else '-'}** | **{', '.join(bearish_planets) if bearish_planets else '-'}** |"
-        )
-        st.markdown("<br>", unsafe_allow_html=True)
+    # --- PLANET HOUSE SEATING ---
+    st.markdown("### Planet House Seating")
+    st.markdown(
+        f"| 🟢 BULLISH ({len(bullish_planets)}) | 🔴 BEARISH ({len(bearish_planets)}) |\n"
+        f"| :--- | :--- |\n"
+        f"| **{', '.join(bullish_planets) if bullish_planets else '-'}** | **{', '.join(bearish_planets) if bearish_planets else '-'}** |"
+    )
+    st.markdown("<br>", unsafe_allow_html=True)
     # ----------------------------------------------------------------------
 
-     # --- MOVED: 5-Minute Time Dropdown ---
+    # --- MOVED: 5-Minute Time Dropdown ---
     time_options = [time(h, m) for h in range(24) for m in range(0, 60, 5)]
     rounded_min = 5 * (selected_time.minute // 5)
     safe_time = time(selected_time.hour, rounded_min)
@@ -946,8 +935,7 @@ with col_right:
     """
     st.markdown(table_html, unsafe_allow_html=True)
     # ---------------------------------------------------------
-
-       
+    
     st.subheader(f"Intraday Live Scoring ({ticker})")
     
     malefics = ["SA", "MA", "RA"]
