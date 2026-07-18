@@ -491,7 +491,98 @@ def draw_circular_horoscope(year, month, day, hour, minute, lat, lon, tz_offset)
 # ==========================================
 def sync_time_from_dropdown():
     st.session_state.time_slider = st.session_state.time_dropdown
+def get_panchang_details(jd):
+    sun_lon, _ = get_planet_position(jd, swe.SUN)
+    moon_lon, _ = get_planet_position(jd, swe.MOON)
+    
+    # Tithi
+    diff = (moon_lon - sun_lon) % 360
+    tithi_num = int(diff / 12) + 1
+    paksha = "Shukla" if tithi_num <= 15 else "Krishna"
+    t_num = tithi_num if tithi_num <= 15 else tithi_num - 15
+    tithi_name = f"{t_num} ({paksha})"
+    
+    # Karana
+    karana_idx = int(diff / 6) + 1
+    if karana_idx == 1: k_name = "Kimstughna"
+    elif karana_idx == 58: k_name = "Shakuni"
+    elif karana_idx == 59: k_name = "Chatushpada"
+    elif karana_idx == 60: k_name = "Naga"
+    else:
+        k_names = ["Bava", "Balava", "Kaulava", "Taitila", "Gara", "Vanija", "Vishti"]
+        k_name = k_names[(karana_idx - 2) % 7]
+        
+    # Yoga
+    total = (moon_lon + sun_lon) % 360
+    yoga_idx = int(total / 13.3333333333)
+    YOGAS = ["Vishkumbha", "Priti", "Ayushman", "Saubhagya", "Shobhana", "Atiganda", "Sukarma", 
+             "Dhriti", "Shula", "Ganda", "Vriddhi", "Dhruva", "Vyaghata", "Harshana", "Vajra", 
+             "Siddhi", "Vyatipata", "Variyan", "Parigha", "Shiva", "Siddha", "Sadhya", "Shubha", 
+             "Shukla", "Brahma", "Indra", "Vaidhriti"]
+    yoga_name = YOGAS[yoga_idx % 27]
+    
+    # Nakshatra & Pada
+    nak_name, pada, _ = get_nakshatra_info(moon_lon)
+    
+    return tithi_name, nak_name, pada, yoga_name, k_name
 
+def generate_panchang_html(eval_date, ist_tz):
+    start_dt = datetime.combine(eval_date, time(0, 0), tzinfo=ist_tz)
+    
+    # Calculate base values at 00:00 IST
+    utc_start = start_dt.astimezone(timezone.utc)
+    jd_base = swe.julday(utc_start.year, utc_start.month, utc_start.day, utc_start.hour + utc_start.minute/60.0 + utc_start.second/3600.0)
+    base_t, base_n, base_p, base_y, base_k = get_panchang_details(jd_base)
+    vara = start_dt.strftime("%A")
+    
+    changes = { 'Tithi': [], 'Nakshatra': [], 'Pada': [], 'Yoga': [], 'Karana': [] }
+    prev_t, prev_n, prev_p, prev_y, prev_k = base_t, base_n, base_p, base_y, base_k
+    
+    # Scan the 24-hour day in 2-minute increments to catch transitions
+    for m in range(2, 1440, 2):
+        check_dt = start_dt + timedelta(minutes=m)
+        utc_check = check_dt.astimezone(timezone.utc)
+        jd_check = swe.julday(utc_check.year, utc_check.month, utc_check.day, utc_check.hour + utc_check.minute/60.0 + utc_check.second/3600.0)
+        
+        curr_t, curr_n, curr_p, curr_y, curr_k = get_panchang_details(jd_check)
+        time_str = check_dt.strftime("%H:%M IST")
+        
+        if curr_t != prev_t:
+            changes['Tithi'].append(f"• {curr_t} at {time_str}")
+            prev_t = curr_t
+        if curr_n != prev_n:
+            changes['Nakshatra'].append(f"• {curr_n} at {time_str}")
+            prev_n = curr_n
+        if curr_p != prev_p:
+            changes['Pada'].append(f"• Pada {curr_p} at {time_str}")
+            prev_p = curr_p
+        if curr_y != prev_y:
+            changes['Yoga'].append(f"• {curr_y} at {time_str}")
+            prev_y = curr_y
+        if curr_k != prev_k:
+            changes['Karana'].append(f"• {curr_k} at {time_str}")
+            prev_k = curr_k
+            
+    # Format HTML 6x2 Table
+    html = "<table style='width:100%; font-size:14px; border-collapse: collapse; margin-bottom: 15px;'>"
+    html += "<tr style='background-color:#1f2937; color:white;'><th style='padding:8px; border:1px solid #4b5563; text-align:left;'>Element</th><th style='padding:8px; border:1px solid #4b5563; text-align:left;'>Details (Intraday Changes)</th></tr>"
+    
+    def make_row(elem, base_val, change_list):
+        details = str(base_val)
+        if change_list:
+            details += "<br><span style='color:#fbbf24; font-size:12.5px; line-height: 1.4; display: inline-block; margin-top: 4px;'>" + "<br>".join(change_list) + "</span>"
+        return f"<tr><td style='padding:8px; border:1px solid #4b5563; font-weight:bold; background-color:#111827; color:white; vertical-align: top;'>{elem}</td><td style='padding:8px; border:1px solid #4b5563; background-color:#111827; color:white; vertical-align: top;'>{details}</td></tr>"
+
+    html += make_row("Vara", vara, [])
+    html += make_row("Nakshatra", base_n, changes['Nakshatra'])
+    html += make_row("Pada", f"{base_p}", changes['Pada'])
+    html += make_row("Tithi", base_t, changes['Tithi'])
+    html += make_row("Yoga", base_y, changes['Yoga'])
+    html += make_row("Karana", base_k, changes['Karana'])
+    
+    html += "</table>"
+    return html
+    
 # ==========================================
 # STREAMLIT UI (LAYOUT & DASHBOARD)
 # ==========================================
@@ -595,6 +686,27 @@ with col_right:
             bullish_planets.append(p_name)
         elif ZONE_SCORES[zone_idx] == -1:
             bearish_planets.append(p_name)
+
+    # 1. Generate the HTML String
+# Make sure your eval_date and timezone (ist) variables match your script's variable names!
+panchang_html = generate_panchang_html(eval_date, ist)
+
+# 2. Adjust the main columns to give the left side more room
+col1, col2 = st.columns([1.8, 1.2])
+
+with col1:
+    # 3. Create two sub-columns inside the left area
+    sub_col1, sub_col2 = st.columns([0.65, 1])
+    
+    with sub_col1:
+        st.markdown("### Daily Panchang")
+        st.markdown(panchang_html, unsafe_allow_html=True)
+        
+    with sub_col2:
+        st.markdown("### Planet House Seating")
+        st.dataframe(df_planets, hide_index=True) # Replace df_planets with whatever your dataframe variable is named
+    
+    st.divider()
             
     st.markdown("### Planet House Seating")
     st.markdown(
