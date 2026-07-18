@@ -751,27 +751,6 @@ with col_right:
             bullish_planets.append(p_name)
         elif ZONE_SCORES[zone_idx] == -1:
             bearish_planets.append(p_name)
-
-
-    # --- MOVED: 5-Minute Time Dropdown ---
-    time_options = [time(h, m) for h in range(24) for m in range(0, 60, 5)]
-    rounded_min = 5 * (selected_time.minute // 5)
-    safe_time = time(selected_time.hour, rounded_min)
-    try:
-        t_idx = time_options.index(safe_time)
-    except ValueError:
-        t_idx = 0
-        
-    st.selectbox(
-        "⏱️ Quick Select Time (5m intervals)",
-        options=time_options,
-        index=t_idx,
-        format_func=lambda t: t.strftime("%H:%M"),
-        key="time_dropdown",
-        on_change=sync_time_from_dropdown
-    )
-    st.markdown("<br>", unsafe_allow_html=True)
-    # ---------------------------------------------------------
             
     # --- PANCHANG & PLANET HOUSE SEATING (SIDE-BY-SIDE NESTED COLUMNS) ---
     p_col1, p_col2 = st.columns([1.7, 1], gap="small")
@@ -905,6 +884,26 @@ with col_right:
             f"| **{', '.join(bullish_planets) if bullish_planets else '-'}** | **{', '.join(bearish_planets) if bearish_planets else '-'}** |"
         )
         st.markdown("<br>", unsafe_allow_html=True)
+    # ----------------------------------------------------------------------
+
+     # --- MOVED: 5-Minute Time Dropdown ---
+    time_options = [time(h, m) for h in range(24) for m in range(0, 60, 5)]
+    rounded_min = 5 * (selected_time.minute // 5)
+    safe_time = time(selected_time.hour, rounded_min)
+    try:
+        t_idx = time_options.index(safe_time)
+    except ValueError:
+        t_idx = 0
+        
+    st.selectbox(
+        "⏱️ Quick Select Time (5m intervals)",
+        options=time_options,
+        index=t_idx,
+        format_func=lambda t: t.strftime("%H:%M"),
+        key="time_dropdown",
+        on_change=sync_time_from_dropdown
+    )
+    st.markdown("<br>", unsafe_allow_html=True)
     # ----------------------------------------------------------------------
     
     # --- ASTROLOGICAL MATRIX TABLE ---
